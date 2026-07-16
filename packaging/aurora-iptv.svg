@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-label="Aurora IPTV">
+  <defs>
+    <linearGradient id="bg" x1="40" y1="32" x2="220" y2="232" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2dd4bf"/>
+      <stop offset="0.48" stop-color="#3b82f6"/>
+      <stop offset="1" stop-color="#111827"/>
+    </linearGradient>
+    <linearGradient id="screen" x1="63" y1="76" x2="194" y2="172" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#bfdbfe"/>
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="54" fill="url(#bg)"/>
+  <path d="M63 78h130c10 0 18 8 18 18v78c0 10-8 18-18 18H63c-10 0-18-8-18-18V96c0-10 8-18 18-18Z" fill="#0f172a" opacity=".86"/>
+  <path d="M71 94h114c6 0 10 4 10 10v58c0 6-4 10-10 10H71c-6 0-10-4-10-10v-58c0-6 4-10 10-10Z" fill="url(#screen)"/>
+  <path d="M97 186h62l9 22H88l9-22Z" fill="#e2e8f0"/>
+  <path d="M74 137c25-29 49-37 73-24 12 6 23 5 35-4v36c-16 9-31 10-45 2-20-11-41-5-63 18v-28Z" fill="#2563eb" opacity=".82"/>
+  <path d="M79 118c21-18 43-23 65-11 12 7 23 6 34-3" fill="none" stroke="#14b8a6" stroke-width="10" stroke-linecap="round"/>
+  <circle cx="202" cy="72" r="17" fill="#f8fafc"/>
+  <circle cx="202" cy="72" r="8" fill="#22c55e"/>
+</svg>

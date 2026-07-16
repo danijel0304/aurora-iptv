@@ -1,0 +1,4 @@
+PyQt6>=6.6
+PySide6>=6.6
+httpx>=0.27
+requests>=2.31

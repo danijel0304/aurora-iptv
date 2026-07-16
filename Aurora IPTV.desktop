@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Aurora IPTV
+Comment=Instaliraj requirements i pokreni Aurora IPTV
+Exec=sh -c 'cd "$(dirname "$1")" && exec ./run.sh' sh %k
+Icon=applications-multimedia
+Terminal=true
+Categories=AudioVideo;Network;
+StartupNotify=true

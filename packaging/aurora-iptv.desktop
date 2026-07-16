@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Aurora IPTV
+Comment=IPTV list analysis, checking, export and archive tool
+Exec=AuroraIPTV
+Icon=aurora-iptv
+Terminal=false
+Categories=AudioVideo;Network;
+StartupNotify=true
