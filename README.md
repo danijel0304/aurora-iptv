@@ -4,6 +4,12 @@ Objedinjeni desktop paket napravljen od najboljih funkcija svih IPTV alata u
 ovom workspaceu. Slabije duple implementacije zamijenjene su zajedničkim
 parserima, dok su dva najjača napredna modula sačuvana u punom obliku.
 
+## Screenshot
+
+### Main window
+
+![Main window](docs/screenshots/main-window.png)
+
 ## Funkcije
 
 - učitavanje i dodavanje više `.txt`, `.log`, `.csv`, `.json`, `.m3u` i `.m3u8` datoteka
