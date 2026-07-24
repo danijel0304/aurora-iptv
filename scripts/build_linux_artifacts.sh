@@ -18,15 +18,20 @@ DIST_DIR="$ROOT_DIR/dist"
 BUILD_DIR="$ROOT_DIR/build"
 WORK_DIR="$ROOT_DIR/package/linux"
 OUT_DIR="$ROOT_DIR/release"
+VERSION_FILE="$BUILD_DIR/aurora_version.txt"
 
 rm -rf "$DIST_DIR" "$BUILD_DIR/pyinstaller" "$WORK_DIR" "$OUT_DIR"
-mkdir -p "$OUT_DIR" "$WORK_DIR"
+mkdir -p "$OUT_DIR" "$WORK_DIR" "$BUILD_DIR"
+printf '%s\n' "$VERSION" > "$VERSION_FILE"
 
 python -m PyInstaller \
     --name "$BINARY_NAME" \
     --onefile \
     --windowed \
     --clean \
+    --add-data "$VERSION_FILE:." \
+    --add-data "$ROOT_DIR/vendor/stalker_studio:vendor/stalker_studio" \
+    --add-data "$ROOT_DIR/vendor/balkan_iptv:vendor/balkan_iptv" \
     --collect-all PyQt6 \
     --hidden-import PyQt6.sip \
     --distpath "$DIST_DIR" \

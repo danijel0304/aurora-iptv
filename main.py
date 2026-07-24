@@ -14,8 +14,9 @@ from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlencode, urlparse
+from urllib.request import Request, urlopen
 
-from PyQt6.QtCore import QSettings, Qt
+from PyQt6.QtCore import QSettings, QThread, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QColor
 from PyQt6.QtWidgets import (
     QApplication,
@@ -83,7 +84,132 @@ def app_data_dir() -> Path:
     return path
 
 
+def resource_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        return Path(getattr(sys, "_MEIPASS", Path(sys.executable).resolve().parent))
+    return Path(__file__).resolve().parent
+
+
+RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
+DEFAULT_APP_VERSION = "v1.1.0"
+
+
+def app_version() -> str:
+    for path in (
+        RESOURCE_DIR / "aurora_version.txt",
+        Path(__file__).resolve().parent / "aurora_version.txt",
+    ):
+        try:
+            version = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if version:
+            return version
+    return DEFAULT_APP_VERSION
+
+
+APP_VERSION = app_version()
+GITHUB_REPO = "danijel0304/aurora-iptv"
+GITHUB_RELEASES_URL = f"https://github.com/{GITHUB_REPO}/releases/latest"
+GITHUB_LATEST_RELEASE_API = f"https://api.github.com/repos/{GITHUB_REPO}/releases/latest"
+PAYPAL_DONATION_URL = "https://www.paypal.me/danijel0304"
+STALKER_STUDIO_FILENAME = "IPTV_List_Generator_3.0_FULL_FIXED_v3_EXPIRY_PATCHED_v14_AUTO_THREADS.py"
+BALKAN_IPTV_DIRNAME = "balkan_iptv"
+
+
+def stalker_studio_source_path() -> Path:
+    candidates: list[Path] = []
+    source_dir = Path(__file__).resolve().parent
+
+    def add(path: Path) -> None:
+        resolved = path.expanduser()
+        if resolved not in candidates:
+            candidates.append(resolved)
+
+    for base in (RESOURCE_DIR, source_dir, APP_DIR):
+        add(base / "vendor" / "stalker_studio" / STALKER_STUDIO_FILENAME)
+        add(base.parent / "iPTV_List_Generetor_New" / STALKER_STUDIO_FILENAME)
+
+    for desktop_root in (Path.home() / "Desktop" / "Projekti", Path.home() / "Desktop" / "test"):
+        add(desktop_root / "iPTV_List_Generetor_New" / STALKER_STUDIO_FILENAME)
+
+    for path in candidates:
+        if path.is_file():
+            return path
+
+    searched = "\n".join(f"- {path}" for path in candidates)
+    raise FileNotFoundError(
+        "Nedostaje Stalker Studio izvorna datoteka. Tražene lokacije:\n" + searched
+    )
+
+
+def balkan_iptv_source_dir() -> Path:
+    candidates: list[Path] = []
+    source_dir = Path(__file__).resolve().parent
+
+    def add(path: Path) -> None:
+        resolved = path.expanduser()
+        if resolved not in candidates:
+            candidates.append(resolved)
+
+    for base in (RESOURCE_DIR, source_dir, APP_DIR):
+        add(base / "vendor" / BALKAN_IPTV_DIRNAME)
+        add(base.parent / "Fusion_IPTV")
+
+    for desktop_root in (Path.home() / "Desktop" / "Projekti", Path.home() / "Desktop" / "test"):
+        add(desktop_root / "Fusion_IPTV")
+
+    for path in candidates:
+        if (path / "main.py").is_file():
+            return path
+
+    searched = "\n".join(f"- {path}" for path in candidates)
+    raise FileNotFoundError("Nedostaje Balkan IPTV modul. Tražene lokacije:\n" + searched)
+
+
+def version_tuple(value: str) -> tuple[int, ...]:
+    numbers = [int(part) for part in re.findall(r"\d+", value or "")]
+    return tuple(numbers or [0])
+
+
+def is_newer_version(latest: str, current: str) -> bool:
+    latest_parts = version_tuple(latest)
+    current_parts = version_tuple(current)
+    size = max(len(latest_parts), len(current_parts))
+    return latest_parts + (0,) * (size - len(latest_parts)) > current_parts + (
+        0,
+    ) * (size - len(current_parts))
+
+
+class UpdateCheckWorker(QThread):
+    checked = pyqtSignal(dict)
+    failed = pyqtSignal(str)
+
+    def run(self) -> None:
+        try:
+            request = Request(
+                GITHUB_LATEST_RELEASE_API,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "Aurora-IPTV/update-check",
+                },
+            )
+            with urlopen(request, timeout=8) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            latest = str(payload.get("tag_name") or "")
+            if not latest:
+                raise RuntimeError("GitHub nije vratio oznaku verzije.")
+            self.checked.emit(
+                {
+                    "latest": latest,
+                    "current": APP_VERSION,
+                    "url": str(payload.get("html_url") or GITHUB_RELEASES_URL),
+                    "is_newer": is_newer_version(latest, APP_VERSION),
+                }
+            )
+        except Exception as error:
+            self.failed.emit(str(error) or type(error).__name__)
 
 STYLE = """
 * { font-family: "Segoe UI", "Inter", sans-serif; font-size: 13px; }
@@ -267,6 +393,7 @@ EN_TRANSLATIONS = {
     "Uređivač sadržaja": "Content editor",
     "Super-lista": "Super list",
     "Postavke": "Settings",
+    "O aplikaciji": "About",
     "Test streamova": "Test streams",
     "Pokreni Balkan provjeru": "Start Balkan check",
     "Export odabranih u M3U": "Export selected to M3U",
@@ -297,6 +424,8 @@ EN_TRANSLATIONS = {
     "Spremi izlaz": "Save output",
     "Spremi grupe u arhivu": "Save groups to archive",
     "Pošalji u Provjeru portala": "Send to portal check",
+    "Dodaj sve u Provjeru portala": "Add all to portal check",
+    "Dodaj sve URL/MAC parove iz grupiranja u tab Provjera portala bez ručnog kopiranja.": "Add all grouped URL/MAC pairs to the Portal check tab without manual copying.",
     "Paralelno:": "Parallel:",
     "Timeout:": "Timeout:",
     "Učitaj TXT/M3U": "Load TXT/M3U",
@@ -310,6 +439,7 @@ EN_TRANSLATIONS = {
     "Export aktivnih M3U": "Export active M3U",
     "Spremi aktivne u arhivu": "Save active to archive",
     "Pošalji u Generator": "Send to Generator",
+    "Učitaj u Balkan IPTV": "Load into Balkan IPTV",
     "Ukloni neaktivne": "Remove inactive",
     "Ukloni duplikate": "Remove duplicates",
     "Očisti rezultate": "Clear results",
@@ -430,6 +560,7 @@ EN_TRANSLATIONS = {
     "Napravi M3U listu samo od računa koji su u provjeri označeni kao aktivni.": "Create an M3U list only from accounts marked active in the check.",
     "Spremi M3U listu aktivnih računa u bazu bez pisanja datoteke.": "Save the active account M3U list to the database without writing a file.",
     "Prebaci označeni aktivni račun u Live/VOD/Series generator.": "Send the selected active account to the Live/VOD/Series generator.",
+    "Prebaci vidljive URL-ove u Balkan IPTV skener bez kopiranja.": "Send visible URLs into the Balkan IPTV scanner without copying.",
     "Šalje MAC adrese na ovlašteni HTTP endpoint i bilježi koje adrese dobivaju uspješan odgovor.": "Sends MAC addresses to an authorized HTTP endpoint and records which addresses receive a successful response.",
     "Način slanja:": "Send method:",
     "Naziv polja:": "Field name:",
@@ -466,6 +597,17 @@ EN_TRANSLATIONS = {
     "Proxy lista:": "Proxy list:",
     "VLC / vanjski player:": "VLC / external player:",
     "Export folder:": "Export folder:",
+    "Ažuriranja": "Updates",
+    "Trenutna verzija:": "Current version:",
+    "Automatski provjeri update pri pokretanju": "Automatically check for updates on startup",
+    "Provjeri update": "Check for updates",
+    "Otvori GitHub release": "Open GitHub release",
+    "Podrška": "Support",
+    "PayPal donacija za danijel0304.": "PayPal donation for danijel0304.",
+    "Doniraj preko PayPala": "Donate with PayPal",
+    "Otvori stranicu za preuzimanje najnovije verzije.": "Open the download page for the latest version.",
+    "Otvori PayPal.me stranicu za donaciju.": "Open the PayPal.me donation page.",
+    "Nije još provjereno.": "Not checked yet.",
     "Otvori datoteke": "Open files",
     "Podržano (*.txt *.log *.csv *.json *.m3u *.m3u8);;Sve datoteke (*)": "Supported (*.txt *.log *.csv *.json *.m3u *.m3u8);;All files (*)",
     "Sve datoteke (*)": "All files (*)",
@@ -480,6 +622,8 @@ EN_TRANSLATIONS = {
     "Pokreni stream u VLC playeru": "Play stream in VLC player",
     "Kopiraj sve": "Copy all",
     "Pošalji sve u Xtream skener": "Send all to Xtream scanner",
+    "Pošalji sve u Balkan IPTV": "Send all to Balkan IPTV",
+    "Pošalji M3U u Balkan IPTV": "Send M3U to Balkan IPTV",
     "Pošalji označeni Xtream URL u generator": "Send selected Xtream URL to generator",
     "Pošalji URL/MAC profile u Stalker": "Send URL/MAC profiles to Stalker",
     "Pošalji grupe u Stalker tab": "Send groups to Stalker tab",
@@ -504,6 +648,8 @@ EN_TRANSLATIONS = {
     "M3U sadržaj:": "M3U content:",
     "Označi URL ili postavi kursor u njegov redak.": "Select a URL or place the cursor on its line.",
     "Nema URL/MAC parova za slanje.": "No URL/MAC pairs to send.",
+    "Dodano profila u Provjeru portala:": "Profiles added to Portal check:",
+    "Ukupno u provjeri:": "Total in check:",
     "Prepoznato URL-ova:": "Detected URLs:",
     "Prepoznato MAC adresa:": "Detected MAC addresses:",
     "Nevaljanih URL-ova:": "Invalid URLs:",
@@ -549,6 +695,9 @@ EN_TRANSLATIONS = {
     "Nema URL/MAC profila za provjeru.": "No URL/MAC profiles to check.",
     "Označi URL/MAC profil.": "Select a URL/MAC profile.",
     "Nema ispravnih profila za export.": "No valid profiles to export.",
+    "Nema URL-ova za Balkan IPTV.": "No URLs for Balkan IPTV.",
+    "Balkan IPTV nije učitan.": "Balkan IPTV is not loaded.",
+    "Balkan provjera je već u tijeku.": "Balkan check is already running.",
     "Označi račun u arhivi.": "Select an account in the archive.",
     "Račun je povučen iz arhive u Xtream Generator.": "Account pulled from archive into Xtream Generator.",
     "Račun je poslan iz arhive u Xtream provjeru.": "Account sent from archive to Xtream check.",
@@ -574,6 +723,12 @@ EN_TRANSLATIONS = {
     "Odaberi player": "Choose player",
     "Odaberi export folder": "Choose export folder",
     "Postavke su spremljene.": "Settings saved.",
+    "Provjera updatea je već pokrenuta.": "Update check is already running.",
+    "Provjeravam GitHub release...": "Checking GitHub release...",
+    "Nova verzija dostupna:": "New version available:",
+    "Koristiš najnoviju verziju:": "You are using the latest version:",
+    "Update provjera nije uspjela:": "Update check failed:",
+    "Učitano URL-ova u Balkan IPTV:": "URLs loaded into Balkan IPTV:",
     "Spremi": "Save",
     "Obriši označene": "Delete selected",
     "Obriši sve": "Delete all",
@@ -1642,11 +1797,16 @@ class AuroraWindow(QMainWindow):
         self.auto_save_active = str(self.settings.value("auto_save_active", "true")).lower() != "false"
         self.confirm_bulk_actions = str(self.settings.value("confirm_bulk_actions", "true")).lower() != "false"
         self.remember_last_tab = str(self.settings.value("remember_last_tab", "true")).lower() != "false"
+        self.check_updates_on_startup = (
+            str(self.settings.value("check_updates_on_startup", "true")).lower() != "false"
+        )
         self.vault = Vault(APP_DIR / "aurora_vault.db")
         self.scan_worker: XtreamScanWorker | None = None
         self.mac_worker: MacHttpWorker | None = None
         self.stalker_check_worker: StalkerProfileCheckWorker | None = None
         self.playlist_worker: PlaylistWorker | None = None
+        self.update_check_worker: UpdateCheckWorker | None = None
+        self.latest_release_url = GITHUB_RELEASES_URL
         self.playlist_rows: dict[str, list[dict[str, str]]] = {
             "Live": [],
             "VOD": [],
@@ -1659,6 +1819,8 @@ class AuroraWindow(QMainWindow):
         self.stalker_embedded_module = None
         self._build_ui()
         self._load_settings()
+        if self.check_updates_on_startup:
+            QTimer.singleShot(1200, lambda: self.start_update_check(manual=False))
 
     def tr_ui(self, key: str) -> str:
         return UI_TEXT.get(self.language, UI_TEXT["en"]).get(key, UI_TEXT["en"].get(key, key))
@@ -1902,6 +2064,31 @@ class AuroraWindow(QMainWindow):
         brand.addWidget(self.subtitle_label)
         title_row.addLayout(brand)
         title_row.addStretch()
+
+        header_controls = QVBoxLayout()
+        header_controls.setSpacing(6)
+        header_actions = QHBoxLayout()
+        header_actions.setSpacing(8)
+        self.setting_check_updates_startup = QCheckBox(
+            "Automatski provjeri update pri pokretanju"
+        )
+        self.setting_check_updates_startup.setChecked(self.check_updates_on_startup)
+        self.setting_check_updates_startup.toggled.connect(
+            self.update_startup_preference_changed
+        )
+        self.header_update_button = button("Provjeri update", primary=True)
+        self.header_update_button.clicked.connect(lambda: self.start_update_check(manual=True))
+        self.header_donate_button = button(
+            "Doniraj preko PayPala",
+            tooltip="Otvori PayPal.me stranicu za donaciju.",
+        )
+        self.header_donate_button.clicked.connect(self.open_paypal_donation)
+        header_actions.addWidget(self.setting_check_updates_startup)
+        header_actions.addWidget(self.header_update_button)
+        header_actions.addWidget(self.header_donate_button)
+
+        preference_row = QHBoxLayout()
+        preference_row.setSpacing(8)
         self.setting_theme = QComboBox()
         self.setting_theme.addItem("Dark", "dark")
         self.setting_theme.addItem("Light", "light")
@@ -1910,13 +2097,20 @@ class AuroraWindow(QMainWindow):
         self.setting_language.addItem("English", "en")
         self.setting_language.addItem("Hrvatski", "hr")
         self.setting_language.setMaximumWidth(120)
-        title_row.addWidget(QLabel("Theme"))
-        title_row.addWidget(self.setting_theme)
-        title_row.addWidget(QLabel("Language"))
-        title_row.addWidget(self.setting_language)
+        preference_row.addWidget(QLabel("Theme"))
+        preference_row.addWidget(self.setting_theme)
+        preference_row.addWidget(QLabel("Language"))
+        preference_row.addWidget(self.setting_language)
         self.connection_label = QLabel(self.tr_ui("ready"))
         self.connection_label.setStyleSheet("color: #62d6a7; font-weight: 700;")
-        title_row.addWidget(self.connection_label)
+        self.update_status_label = QLabel("Nije još provjereno.")
+        self.update_status_label.setObjectName("Subtitle")
+        preference_row.addWidget(self.connection_label)
+        preference_row.addStretch()
+        header_controls.addLayout(header_actions)
+        header_controls.addLayout(preference_row)
+        header_controls.addWidget(self.update_status_label)
+        title_row.addLayout(header_controls)
         root.addLayout(title_row)
 
         self.tabs = QTabWidget()
@@ -1980,6 +2174,138 @@ class AuroraWindow(QMainWindow):
         self.gen_password.setText(password)
         self.select_xtream_tab("Studio · Live / VOD / Series")
 
+    @staticmethod
+    def balkan_checkable_urls(urls: list[str]) -> list[str]:
+        result = []
+        seen = set()
+        for url in urls:
+            cleaned = url.strip()
+            key = cleaned.lower()
+            if not cleaned or key in seen:
+                continue
+            if "username=" not in key and "mac=" not in key:
+                continue
+            result.append(cleaned)
+            seen.add(key)
+        return result
+
+    def send_analysis_to_balkan(self) -> None:
+        urls: list[str]
+        if self.url_result:
+            needle = self.url_filter.text().strip().lower()
+            urls = [
+                url
+                for url in self.url_result.urls
+                if not needle
+                or needle in url.lower()
+                or needle in (urlparse(url).hostname or "").lower()
+            ]
+        else:
+            urls = extract_playlist_urls(
+                self.url_input.toPlainText(), playlists_only=False
+            ).urls
+        self.load_urls_into_balkan(urls)
+
+    def send_scan_to_balkan(self) -> None:
+        rows = self.scan_result_rows(visible_only=True)
+        urls = [str(row.get("playlist_url", "")) for row in rows if row.get("playlist_url")]
+        if not urls:
+            urls = extract_playlist_urls(self.scan_input.toPlainText(), playlists_only=False).urls
+        self.load_urls_into_balkan(urls)
+
+    def load_urls_into_balkan(self, urls: list[str]) -> None:
+        checkable_urls = self.balkan_checkable_urls(urls)
+        if not checkable_urls:
+            QMessageBox.information(
+                self,
+                "Balkan IPTV",
+                self.translate_static_text("Nema URL-ova za Balkan IPTV."),
+            )
+            return
+        if not self.fusion_window or not hasattr(self.fusion_window, "input_area"):
+            QMessageBox.warning(
+                self,
+                "Balkan IPTV",
+                self.translate_static_text("Balkan IPTV nije učitan."),
+            )
+            return
+        worker = getattr(self.fusion_window, "worker", None)
+        if worker and worker.isRunning():
+            QMessageBox.information(
+                self,
+                "Balkan IPTV",
+                self.translate_static_text("Balkan provjera je već u tijeku."),
+            )
+            return
+        self.fusion_window.input_area.setPlainText("\n".join(checkable_urls))
+        if hasattr(self.fusion_window, "stack"):
+            self.fusion_window.stack.setCurrentIndex(0)
+        self.select_xtream_tab("Balkan IPTV")
+        self.statusBar().showMessage(
+            f"{self.translate_static_text('Učitano URL-ova u Balkan IPTV:')} {len(checkable_urls)}",
+            5000,
+        )
+
+    def start_update_check(self, manual: bool = True) -> None:
+        if self.update_check_worker and self.update_check_worker.isRunning():
+            message = self.translate_static_text("Provjera updatea je već pokrenuta.")
+            if hasattr(self, "update_status_label"):
+                self.update_status_label.setText(message)
+            if manual:
+                self.statusBar().showMessage(message, 5000)
+            return
+        if hasattr(self, "update_status_label"):
+            self.update_status_label.setText(
+                self.translate_static_text("Provjeravam GitHub release...")
+            )
+        self.update_check_worker = UpdateCheckWorker(self)
+        self.update_check_worker.checked.connect(
+            lambda payload: self.update_check_finished(payload, manual)
+        )
+        self.update_check_worker.failed.connect(
+            lambda error: self.update_check_failed(error, manual)
+        )
+        self.update_check_worker.finished.connect(
+            lambda: setattr(self, "update_check_worker", None)
+        )
+        self.update_check_worker.start()
+
+    def update_check_finished(self, payload: dict, manual: bool) -> None:
+        latest = str(payload.get("latest") or "")
+        current = str(payload.get("current") or APP_VERSION)
+        self.latest_release_url = str(payload.get("url") or GITHUB_RELEASES_URL)
+        if payload.get("is_newer"):
+            message = (
+                f"{self.translate_static_text('Nova verzija dostupna:')} {latest} "
+                f"(trenutna {current})"
+            )
+        else:
+            message = f"{self.translate_static_text('Koristiš najnoviju verziju:')} {current}"
+        if hasattr(self, "update_status_label"):
+            self.update_status_label.setText(message)
+        self.statusBar().showMessage(message, 7000)
+        if manual:
+            QMessageBox.information(self, self.translate_static_text("Ažuriranja"), message)
+
+    def update_check_failed(self, error: str, manual: bool) -> None:
+        message = f"{self.translate_static_text('Update provjera nije uspjela:')} {error}"
+        if hasattr(self, "update_status_label"):
+            self.update_status_label.setText(message)
+        self.statusBar().showMessage(message, 7000)
+        if manual:
+            QMessageBox.warning(self, self.translate_static_text("Ažuriranja"), message)
+
+    def open_latest_release(self) -> None:
+        webbrowser.open(self.latest_release_url or GITHUB_RELEASES_URL)
+
+    def open_paypal_donation(self) -> None:
+        webbrowser.open(PAYPAL_DONATION_URL)
+
+    def update_startup_preference_changed(self, checked: bool) -> None:
+        self.check_updates_on_startup = checked
+        self.settings.setValue("check_updates_on_startup", checked)
+        self.settings.sync()
+
     def _dashboard_tab(self) -> QWidget:
         page = QWidget()
         layout = QVBoxLayout(page)
@@ -2029,7 +2355,7 @@ class AuroraWindow(QMainWindow):
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, 0, 0, 0)
         try:
-            fusion_dir = APP_DIR.parent / "Fusion_IPTV"
+            fusion_dir = balkan_iptv_source_dir()
             fusion_main = fusion_dir / "main.py"
             fusion_data_dir = APP_DIR
             if str(fusion_dir) not in sys.path:
@@ -2356,7 +2682,13 @@ class AuroraWindow(QMainWindow):
             tooltip="Spremi trenutni rezultat u bazu kako bi ga kasnije mogao otvoriti iz Arhive.",
         )
         save_archive_btn.clicked.connect(self.save_url_results_to_vault)
+        send_balkan_btn = button(
+            "Učitaj u Balkan IPTV",
+            tooltip="Prebaci vidljive URL-ove u Balkan IPTV skener bez kopiranja.",
+        )
+        send_balkan_btn.clicked.connect(self.send_analysis_to_balkan)
         footer.addWidget(save_archive_btn)
+        footer.addWidget(send_balkan_btn)
         footer.addWidget(export_btn)
         layout.addLayout(footer)
         return page
@@ -2386,10 +2718,16 @@ class AuroraWindow(QMainWindow):
         run_btn.clicked.connect(self.run_mac_grouping)
         check_urls_btn = button("Provjeri URL format")
         check_urls_btn.clicked.connect(self.check_mac_group_urls)
+        send_check_top_btn = button(
+            "Dodaj sve u Provjeru portala",
+            tooltip="Dodaj sve URL/MAC parove iz grupiranja u tab Provjera portala bez ručnog kopiranja.",
+        )
+        send_check_top_btn.clicked.connect(self.send_mac_groups_to_stalker_check)
         controls.addWidget(open_btn)
         controls.addWidget(add_btn)
         controls.addWidget(run_btn)
         controls.addWidget(check_urls_btn)
+        controls.addWidget(send_check_top_btn)
         layout.addLayout(controls)
         splitter = QSplitter(Qt.Orientation.Horizontal)
         self.mac_group_input = QTextEdit()
@@ -2433,7 +2771,10 @@ class AuroraWindow(QMainWindow):
             tooltip="Spremi grupirane URL/MAC profile u bazu za kasnije korištenje.",
         )
         save_archive_btn.clicked.connect(self.save_mac_groups_to_vault)
-        send_check_btn = button("Pošalji u Provjeru portala")
+        send_check_btn = button(
+            "Dodaj sve u Provjeru portala",
+            tooltip="Dodaj sve URL/MAC parove iz grupiranja u tab Provjera portala bez ručnog kopiranja.",
+        )
         send_check_btn.clicked.connect(self.send_mac_groups_to_stalker_check)
         footer.addWidget(save_archive_btn)
         footer.addWidget(send_check_btn)
@@ -2534,6 +2875,11 @@ class AuroraWindow(QMainWindow):
             tooltip="Prebaci označeni aktivni račun u Live/VOD/Series generator.",
         )
         send_generator_btn.clicked.connect(self.send_selected_scan_to_generator)
+        send_balkan_btn = button(
+            "Učitaj u Balkan IPTV",
+            tooltip="Prebaci vidljive URL-ove u Balkan IPTV skener bez kopiranja.",
+        )
+        send_balkan_btn.clicked.connect(self.send_scan_to_balkan)
         remove_offline = button("Ukloni neaktivne")
         remove_offline.clicked.connect(self.remove_offline_results)
         remove_duplicates = button("Ukloni duplikate")
@@ -2546,6 +2892,7 @@ class AuroraWindow(QMainWindow):
         export_row.addWidget(export_m3u)
         export_row.addWidget(save_m3u)
         export_row.addWidget(send_generator_btn)
+        export_row.addWidget(send_balkan_btn)
         export_row.addStretch()
         cleanup_row.addWidget(remove_offline)
         cleanup_row.addWidget(remove_duplicates)
@@ -2933,11 +3280,7 @@ class AuroraWindow(QMainWindow):
         return page
 
     def build_embedded_stalker(self) -> QWidget:
-        source_path = (
-            APP_DIR.parent
-            / "iPTV_List_Generetor_New"
-            / "IPTV_List_Generator_3.0_FULL_FIXED_v3_EXPIRY_PATCHED_v14_AUTO_THREADS.py"
-        )
+        source_path = stalker_studio_source_path()
         source = source_path.read_text(encoding="utf-8")
         replacements = {
             "from PySide6 import QtCore, QtGui, QtWidgets": (
@@ -3528,6 +3871,7 @@ class AuroraWindow(QMainWindow):
         menu.addSeparator()
         copy_all = menu.addAction("Kopiraj sve")
         send_scanner = menu.addAction("Pošalji sve u Xtream skener")
+        send_balkan = menu.addAction("Pošalji sve u Balkan IPTV")
         send_generator = menu.addAction("Pošalji označeni Xtream URL u generator")
         send_stalker = menu.addAction("Pošalji URL/MAC profile u Stalker")
         self.translate_menu(menu)
@@ -3537,6 +3881,8 @@ class AuroraWindow(QMainWindow):
         elif chosen == send_scanner:
             self.append_text(self.scan_input, self.url_output.toPlainText())
             self.select_xtream_tab("Provjera računa")
+        elif chosen == send_balkan:
+            self.send_analysis_to_balkan()
         elif chosen == send_generator:
             selected = self.url_output.textCursor().selectedText().strip()
             candidate = selected.splitlines()[0] if selected else self.url_output.textCursor().block().text().strip()
@@ -3627,12 +3973,17 @@ class AuroraWindow(QMainWindow):
         if not content:
             QMessageBox.information(self, "Provjera portala", "Nema URL/MAC parova za slanje.")
             return
-        self.stalker_check_table.setRowCount(0)
+        before = self.stalker_check_table.rowCount()
         self.add_stalker_check_profiles_from_text(content)
+        after = self.stalker_check_table.rowCount()
         self.select_main_tab("Stalker Studio")
         self.stalker_tabs.setCurrentIndex(2)
         self.statusBar().showMessage(
-            f"Poslano profila u Provjeru portala: {self.stalker_check_table.rowCount()}",
+            (
+                f"{self.translate_static_text('Dodano profila u Provjeru portala:')} "
+                f"{after - before} · "
+                f"{self.translate_static_text('Ukupno u provjeri:')} {after}"
+            ),
             5000,
         )
 
@@ -3853,6 +4204,7 @@ class AuroraWindow(QMainWindow):
         copy_action = menu.addAction("Kopiraj M3U URL")
         copy_account = menu.addAction("Kopiraj server / korisnik / lozinka")
         generator_action = menu.addAction("Otvori račun u Xtream Generatoru")
+        balkan_action = menu.addAction("Pošalji M3U u Balkan IPTV")
         self.translate_menu(menu)
         chosen = menu.exec(self.scan_table.viewport().mapToGlobal(position))
         if chosen == save_action:
@@ -3870,6 +4222,8 @@ class AuroraWindow(QMainWindow):
                 result["username"],
                 result["password"],
             )
+        elif chosen == balkan_action:
+            self.load_urls_into_balkan([result["playlist_url"]])
 
     def generator_table_menu(self, content_type: str, position) -> None:
         content_table = self.gen_tables[content_type]
@@ -5274,12 +5628,14 @@ class AuroraWindow(QMainWindow):
         self.auto_save_active = self.setting_auto_save_active.isChecked()
         self.confirm_bulk_actions = self.setting_confirm_bulk.isChecked()
         self.remember_last_tab = self.setting_remember_tab.isChecked()
+        self.check_updates_on_startup = self.setting_check_updates_startup.isChecked()
         self.settings.setValue("theme", self.theme)
         self.settings.setValue("language", self.language)
         self.settings.setValue("export_dir", self.default_export_dir)
         self.settings.setValue("auto_save_active", self.auto_save_active)
         self.settings.setValue("confirm_bulk_actions", self.confirm_bulk_actions)
         self.settings.setValue("remember_last_tab", self.remember_last_tab)
+        self.settings.setValue("check_updates_on_startup", self.check_updates_on_startup)
         self.settings.setValue("user_agent", self.setting_user_agent.currentText())
         self.settings.setValue("proxies", self.setting_proxy.toPlainText())
         self.settings.setValue("player", self.setting_player.text())
@@ -5305,6 +5661,9 @@ class AuroraWindow(QMainWindow):
         self.auto_save_active = str(self.settings.value("auto_save_active", self.auto_save_active)).lower() not in {"false", "0"}
         self.confirm_bulk_actions = str(self.settings.value("confirm_bulk_actions", self.confirm_bulk_actions)).lower() not in {"false", "0"}
         self.remember_last_tab = str(self.settings.value("remember_last_tab", self.remember_last_tab)).lower() not in {"false", "0"}
+        self.check_updates_on_startup = str(
+            self.settings.value("check_updates_on_startup", self.check_updates_on_startup)
+        ).lower() not in {"false", "0"}
         if hasattr(self, "setting_theme"):
             theme_index = self.setting_theme.findData(self.theme)
             if theme_index >= 0:
@@ -5326,11 +5685,18 @@ class AuroraWindow(QMainWindow):
         self.setting_auto_save_active.setChecked(self.auto_save_active)
         self.setting_confirm_bulk.setChecked(self.confirm_bulk_actions)
         self.setting_remember_tab.setChecked(self.remember_last_tab)
+        self.setting_check_updates_startup.setChecked(self.check_updates_on_startup)
         if self.remember_last_tab:
             self.select_main_tab(str(self.settings.value("last_main_tab", self.tr_ui("home"))))
 
     def closeEvent(self, event) -> None:
-        for worker in [self.scan_worker, self.mac_worker, self.stalker_check_worker, self.playlist_worker]:
+        for worker in [
+            self.scan_worker,
+            self.mac_worker,
+            self.stalker_check_worker,
+            self.playlist_worker,
+            self.update_check_worker,
+        ]:
             if worker and worker.isRunning():
                 if hasattr(worker, "stop"):
                     worker.stop()

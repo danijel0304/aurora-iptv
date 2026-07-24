@@ -32,11 +32,15 @@ jobs:
         shell: pwsh
         run: |
           $version = $env:GITHUB_REF_NAME -replace '/', '-'
+          Set-Content -Path aurora_version.txt -Value $version -NoNewline
           python -m PyInstaller `
             --name AuroraIPTV `
             --onefile `
             --windowed `
             --clean `
+            --add-data "aurora_version.txt;." `
+            --add-data "vendor\stalker_studio;vendor\stalker_studio" `
+            --add-data "vendor\balkan_iptv;vendor\balkan_iptv" `
             --collect-all PyQt6 `
             --hidden-import PyQt6.sip `
             main.py
