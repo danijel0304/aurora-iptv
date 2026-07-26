@@ -96,7 +96,7 @@ def resource_dir() -> Path:
 
 RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
-DEFAULT_APP_VERSION = "v1.1.5"
+DEFAULT_APP_VERSION = "v1.1.6"
 
 
 def app_version() -> str:
@@ -827,6 +827,16 @@ EN_TRANSLATIONS = {
     "Nova verzija dostupna:": "New version available:",
     "Koristiš najnoviju verziju:": "You are using the latest version:",
     "Update provjera nije uspjela:": "Update check failed:",
+    "Update je već u tijeku.": "Update is already in progress.",
+    "Update nije uspio:": "Update failed:",
+    "Update je preuzet. Aurora će se zatvoriti, zamijeniti aplikaciju i ponovno pokrenuti.": "Update downloaded. Aurora will close, replace the application and restart.",
+    "Update je preuzet. Aurora će se zatvoriti i pokrenuti novu verziju.": "Update downloaded. Aurora will close and start the new version.",
+    "Update se instalira...": "Installing update...",
+    "Nova AppImage verzija je pokrenuta.": "New AppImage version has started.",
+    "Instalacija .deb updatea je pokrenuta.": ".deb update installation has started.",
+    "Instalacija updatea je pokrenuta. Aurora će se zatvoriti i ponovno pokrenuti nakon uspješne instalacije. Ako sustav zatraži lozinku, potvrdi instalaciju.": "Update installation has started. Aurora will close and restart after successful installation. If the system asks for a password, confirm the installation.",
+    "Instalacija updatea je pokrenuta. Ako sustav zatraži lozinku, potvrdi instalaciju i zatim ponovno pokreni Auroru.": "Update installation has started. If the system asks for a password, confirm the installation and then restart Aurora.",
+    "Nije pronađen pkexec ni xdg-open za instalaciju .deb paketa.": "Neither pkexec nor xdg-open was found for .deb package installation.",
     "Učitano URL-ova u Balkan IPTV:": "URLs loaded into Balkan IPTV:",
     "Spremi": "Save",
     "Obriši označene": "Delete selected",
@@ -2471,7 +2481,7 @@ class AuroraWindow(QMainWindow):
 
     def start_update_check(self, manual: bool = True) -> None:
         if self.update_download_worker and self.update_download_worker.isRunning():
-            message = "Update je već u tijeku."
+            message = self.translate_static_text("Update je već u tijeku.")
             if hasattr(self, "update_status_label"):
                 self.update_status_label.setText(message)
             self.statusBar().showMessage(message, 5000)
@@ -2614,7 +2624,7 @@ class AuroraWindow(QMainWindow):
             self.header_update_button.setEnabled(True)
 
     def update_download_failed(self, error: str) -> None:
-        message = f"Update nije uspio: {error}"
+        message = f"{self.translate_static_text('Update nije uspio:')} {error}"
         if hasattr(self, "update_status_label"):
             self.update_status_label.setText(message)
         self.statusBar().showMessage(message, 7000)
@@ -2663,8 +2673,7 @@ class AuroraWindow(QMainWindow):
                 self.launch_replacement_update(path, Path(appimage).resolve())
             else:
                 path.chmod(path.stat().st_mode | 0o755)
-                subprocess.Popen([str(path)])
-                self.statusBar().showMessage("Nova AppImage verzija je pokrenuta.", 7000)
+                self.launch_downloaded_update(path)
             return
 
         if sys.platform.startswith("linux") and name.endswith(".tar.gz"):
@@ -2690,6 +2699,24 @@ class AuroraWindow(QMainWindow):
         if hasattr(self, "update_status_label"):
             self.update_status_label.setText(f"Update je preuzet: {path}")
         QMessageBox.information(self, self.translate_static_text("Ažuriranja"), message)
+
+    def launch_downloaded_update(self, path: Path) -> None:
+        subprocess.Popen([str(path)])
+        message = self.translate_static_text(
+            "Update je preuzet. Aurora će se zatvoriti i pokrenuti novu verziju."
+        )
+        QMessageBox.information(
+            self,
+            self.translate_static_text("Ažuriranja"),
+            message,
+        )
+        if hasattr(self, "update_status_label"):
+            self.update_status_label.setText(self.translate_static_text("Update se instalira..."))
+        self.statusBar().showMessage(
+            self.translate_static_text("Nova AppImage verzija je pokrenuta."),
+            7000,
+        )
+        QTimer.singleShot(300, QApplication.instance().quit)
 
     def launch_replacement_update(
         self,
@@ -2751,10 +2778,12 @@ class AuroraWindow(QMainWindow):
         QMessageBox.information(
             self,
             self.translate_static_text("Ažuriranja"),
-            "Update je preuzet. Aurora će se zatvoriti, zamijeniti aplikaciju i ponovno pokrenuti.",
+            self.translate_static_text(
+                "Update je preuzet. Aurora će se zatvoriti, zamijeniti aplikaciju i ponovno pokrenuti."
+            ),
         )
         if hasattr(self, "update_status_label"):
-            self.update_status_label.setText("Update se instalira...")
+            self.update_status_label.setText(self.translate_static_text("Update se instalira..."))
         QTimer.singleShot(300, QApplication.instance().quit)
 
     def extract_portable_update_binary(self, archive_path: Path) -> Path:
@@ -2781,24 +2810,79 @@ class AuroraWindow(QMainWindow):
 
     def install_deb_update(self, path: Path) -> None:
         apt = shutil.which("apt") or "/usr/bin/apt"
+        app_path = self.current_executable_path() or Path("/usr/bin/AuroraIPTV")
         if hasattr(os, "geteuid") and os.geteuid() == 0:
-            subprocess.Popen([apt, "install", "-y", str(path)])
+            self.launch_deb_update_script(path, app_path, [apt, "install", "-y", str(path)])
         else:
             pkexec = shutil.which("pkexec")
             if pkexec:
-                subprocess.Popen([pkexec, apt, "install", "-y", str(path)])
+                self.launch_deb_update_script(path, app_path, [pkexec, apt, "install", "-y", str(path)])
             else:
                 opener = shutil.which("xdg-open")
                 if not opener:
-                    raise RuntimeError("Nije pronađen pkexec ni xdg-open za instalaciju .deb paketa.")
+                    raise RuntimeError(
+                        self.translate_static_text(
+                            "Nije pronađen pkexec ni xdg-open za instalaciju .deb paketa."
+                        )
+                    )
                 subprocess.Popen([opener, str(path)])
+                if hasattr(self, "update_status_label"):
+                    self.update_status_label.setText(
+                        self.translate_static_text("Instalacija .deb updatea je pokrenuta.")
+                    )
+                QMessageBox.information(
+                    self,
+                    self.translate_static_text("Ažuriranja"),
+                    self.translate_static_text(
+                        "Instalacija updatea je pokrenuta. Ako sustav zatraži lozinku, potvrdi instalaciju i zatim ponovno pokreni Auroru."
+                    ),
+                )
+                return
         if hasattr(self, "update_status_label"):
-            self.update_status_label.setText("Instalacija .deb updatea je pokrenuta.")
+            self.update_status_label.setText(
+                self.translate_static_text("Instalacija .deb updatea je pokrenuta.")
+            )
         QMessageBox.information(
             self,
             self.translate_static_text("Ažuriranja"),
-            "Instalacija updatea je pokrenuta. Ako sustav zatraži lozinku, potvrdi instalaciju i zatim ponovno pokreni Auroru.",
+            self.translate_static_text(
+                "Instalacija updatea je pokrenuta. Aurora će se zatvoriti i ponovno pokrenuti nakon uspješne instalacije. Ako sustav zatraži lozinku, potvrdi instalaciju."
+            ),
         )
+        QTimer.singleShot(300, QApplication.instance().quit)
+
+    def launch_deb_update_script(
+        self,
+        package_path: Path,
+        app_path: Path,
+        install_command: list[str],
+    ) -> None:
+        script = Path(tempfile.gettempdir()) / f"aurora-iptv-deb-update-{os.getpid()}.sh"
+        install_line = " ".join(shlex.quote(part) for part in install_command)
+        script.write_text(
+            "\n".join(
+                [
+                    "#!/bin/sh",
+                    "set -u",
+                    f"PID={os.getpid()}",
+                    f"APP={shlex.quote(str(app_path))}",
+                    f"PACKAGE={shlex.quote(str(package_path))}",
+                    f"INSTALL_CMD={shlex.quote(install_line)}",
+                    "while kill -0 \"$PID\" 2>/dev/null; do sleep 0.5; done",
+                    "if sh -c \"$INSTALL_CMD\"; then",
+                    "  if [ -x \"$APP\" ]; then",
+                    "    nohup \"$APP\" >/dev/null 2>&1 &",
+                    "  fi",
+                    "  rm -f \"$PACKAGE\"",
+                    "fi",
+                    "rm -f \"$0\"",
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        script.chmod(script.stat().st_mode | 0o755)
+        subprocess.Popen(["sh", str(script)])
 
     def open_paypal_donation(self) -> None:
         webbrowser.open(PAYPAL_DONATION_URL)
