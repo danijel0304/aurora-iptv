@@ -96,7 +96,7 @@ def resource_dir() -> Path:
 
 RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
-DEFAULT_APP_VERSION = "v1.1.4"
+DEFAULT_APP_VERSION = "v1.1.5"
 
 
 def app_version() -> str:
@@ -415,6 +415,7 @@ UI_TEXT = {
             "- Profiles: load or paste portal + MAC profiles and save them for later work. A selected profile can be opened directly in Stalker Studio.\n"
             "- URL -> MAC grouping: turns messy text into portals with matching MAC addresses. Useful before checking or sending to profiles.\n"
             "- Portal check: checks whether portal + MAC pairs work and shows status/ping. Broken profiles can be removed quickly.\n"
+            "- Balkan MAC test: uses the working portal + MAC pairs to find Balkan channels, create tokenized links and test random live samples.\n"
             "- Studio · Live / VOD / Series: loads content from Stalker/MAG portals. Select groups, programs and create an M3U export.\n\n"
             "4. Archive\n"
             "- Stores active Xtream accounts, saved M3U lists and MAC/Stalker profiles. You can send them back to checking, generator or Stalker Studio.\n\n"
@@ -444,6 +445,7 @@ UI_TEXT = {
             "- Profili: učitaj ili zalijepi portal + MAC profile i spremi ih za daljnji rad. Odabrani profil možeš otvoriti direktno u Stalker Studiju.\n"
             "- URL -> MAC grupiranje: iz neurednog teksta složi portale i pripadajuće MAC adrese. Korisno je prije provjere ili slanja u profile.\n"
             "- Provjera portala: provjerava rade li portal + MAC parovi i prikazuje status/ping. Neispravne profile možeš brzo ukloniti.\n"
+            "- Balkan MAC test: iz ispravnih portal + MAC parova traži Balkan kanale, radi tokenizirane linkove i testira nasumične live uzorke.\n"
             "- Studio · Live / VOD / Series: učitava sadržaj iz Stalker/MAG portala. Možeš odabrati grupe, programe i napraviti M3U export.\n\n"
             "4. Arhiva\n"
             "- Čuva aktivne Xtream račune, spremljene M3U liste i MAC/Stalker profile. Iz arhive ih možeš vratiti u provjeru, generator ili Stalker Studio.\n\n"
@@ -455,6 +457,7 @@ UI_TEXT = {
 
 EN_TRANSLATIONS = {
     "Početna": "Home",
+    "Hrvatski": "Croatian",
     "Arhiva": "Archive",
     "Postavke": "Settings",
     "Analiza": "Analysis",
@@ -565,6 +568,7 @@ EN_TRANSLATIONS = {
     "Profili": "Profiles",
     "URL → MAC grupiranje": "URL -> MAC grouping",
     "Provjera portala": "Portal check",
+    "Balkan MAC test": "Balkan MAC test",
     "Provjeri valjanost": "Check validity",
     "Učitaj iz profila": "Load from profiles",
     "Zalijepi i prepoznaj": "Paste and detect",
@@ -574,6 +578,18 @@ EN_TRANSLATIONS = {
     "Ukloni odabrano": "Remove selected",
     "Pošalji odabrano u Studio": "Send selected to Studio",
     "Export ispravnih": "Export valid",
+    "Učitaj ispravne iz Provjere portala": "Load valid from Portal check",
+    "Prebaci samo redove gdje je Provjera portala označila Radi = DA.": "Load only rows where Portal check marked Works = YES.",
+    "Očisti tablicu": "Clear table",
+    "Provjeri Balkan MAC": "Check Balkan MAC",
+    "Zaustavi test": "Stop test",
+    "Nasumičnih streamova po MAC-u": "Random streams per MAC",
+    "Za svaki portal/MAC učitava Live grupe, pronalazi Balkan programe, radi create_link/token i nasumično proba nekoliko streamova.": "For each portal/MAC, loads Live groups, finds Balkan programs, creates tokenized links and randomly tests a few streams.",
+    "Zalijepi portal URL i MAC adrese ako ne učitavaš iz drugih Stalker tabova.": "Paste portal URL and MAC addresses if you are not loading from other Stalker tabs.",
+    "Balkan": "Balkan",
+    "Radi Balkan": "Balkan works",
+    "Testirano": "Tested",
+    "Uzorci": "Samples",
     "Aktivni računi spremljeni bez duplikata": "Active accounts saved without duplicates",
     "Pretraži račune po serveru, korisniku, statusu ili isteku...": "Search accounts by server, user, status or expiry...",
     "Osvježi": "Refresh",
@@ -861,6 +877,26 @@ EN_TRANSLATIONS = {
     "Brzi export (samo Live TV kanali)": "Quick export (Live TV channels only)",
     "Grupa/Kategorija": "Group/Category",
     "Linkova": "Links",
+    "Prikaži Balkan grupe/programe": "Show Balkan groups/programs",
+    "Balkan grupe i programi": "Balkan groups and programs",
+    "Status: Spreman": "Status: Ready",
+    "Nema Logotipa": "No logo",
+    "Bilješke": "Notes",
+    "Zadnja Provjera": "Last check",
+    "Pronađeno na Serveru": "Found on server",
+    "Sadržaj (L|V|S)": "Content (L|V|S)",
+    "Čeka test...": "Waiting for test...",
+    "Nema Stalker profila za učitavanje.": "No Stalker profiles to load.",
+    "Nema ispravnih profila u tabu Provjera portala.": "No valid profiles in the Portal check tab.",
+    "Nema portal/MAC profila za Balkan test.": "No portal/MAC profiles for the Balkan test.",
+    "Zaustavljanje Balkan MAC testa...": "Stopping Balkan MAC test...",
+    "Balkan MAC test je pokrenut.": "Balkan MAC test has started.",
+    "Balkan MAC test nije pokrenut.": "Balkan MAC test is not running.",
+    "Balkan MAC test je završen.": "Balkan MAC test has finished.",
+    "Dodano Balkan MAC profila:": "Balkan MAC profiles added:",
+    "ignorirano MAC adresa bez portala:": "ignored MAC addresses without a portal:",
+    "Uklonjeno odabranih Balkan MAC profila:": "Selected Balkan MAC profiles removed:",
+    "Nema rezultata za export.": "No results to export.",
 }
 
 HR_TRANSLATIONS = {
@@ -869,6 +905,30 @@ HR_TRANSLATIONS = {
     "Dark": "Tamna",
     "Light": "Svijetla",
     "English": "Engleski",
+    "Hrvatski": "Hrvatski",
+    "Export folder:": "Mapa za export:",
+    "Content": "Sadržaj",
+    "Category": "Kategorija",
+    "Time": "Vrijeme",
+    "Works": "Radi",
+    "Timeout": "Istek vremena",
+    "Timeout:": "Istek vremena:",
+    "Status: Ready": "Status: Spreman",
+    "No logo": "Nema logotipa",
+    "Notes": "Bilješke",
+    "Last check": "Zadnja provjera",
+    "Found on server": "Pronađeno na serveru",
+    "Content (L|V|S)": "Sadržaj (L|V|S)",
+    "Balkan groups and programs": "Balkan grupe i programi",
+    "Show Balkan groups/programs": "Prikaži Balkan grupe/programe",
+    "Balkan works": "Radi Balkan",
+    "Tested": "Testirano",
+    "Samples": "Uzorci",
+    "Waiting for test...": "Čeka test...",
+    "Status: Spreman": "Status: Spreman",
+    "Nema Logotipa": "Nema logotipa",
+    "Pronađeno na Serveru": "Pronađeno na serveru",
+    "Zadnja Provjera": "Zadnja provjera",
 }
 
 BALKAN_EMBED_STYLE = """
@@ -5706,11 +5766,18 @@ class AuroraWindow(QMainWindow):
                     added += 1
         if parsed.ignored:
             self.statusBar().showMessage(
-                f"Dodano {added} profila; ignorirano MAC adresa bez portala: {parsed.ignored}",
+                (
+                    f"{self.translate_static_text('Dodano Balkan MAC profila:')} {added}; "
+                    f"{self.translate_static_text('ignorirano MAC adresa bez portala:')} "
+                    f"{parsed.ignored}"
+                ),
                 6000,
             )
         else:
-            self.statusBar().showMessage(f"Dodano Balkan MAC profila: {added}", 4000)
+            self.statusBar().showMessage(
+                f"{self.translate_static_text('Dodano Balkan MAC profila:')} {added}",
+                4000,
+            )
 
     def load_stalker_balkan_from_profiles(self) -> None:
         rows = []
@@ -5720,7 +5787,11 @@ class AuroraWindow(QMainWindow):
                 f"{self.stalker_table.item(row, 1).text()}"
             )
         if not rows:
-            QMessageBox.information(self, "Balkan MAC test", "Nema Stalker profila za učitavanje.")
+            QMessageBox.information(
+                self,
+                self.translate_static_text("Balkan MAC test"),
+                self.translate_static_text("Nema Stalker profila za učitavanje."),
+            )
             return
         self.stalker_balkan_table.setRowCount(0)
         self.add_stalker_balkan_profiles_from_text("\n\n".join(rows))
@@ -5738,8 +5809,8 @@ class AuroraWindow(QMainWindow):
         if not rows:
             QMessageBox.information(
                 self,
-                "Balkan MAC test",
-                "Nema ispravnih profila u tabu Provjera portala.",
+                self.translate_static_text("Balkan MAC test"),
+                self.translate_static_text("Nema ispravnih profila u tabu Provjera portala."),
             )
             return
         self.stalker_balkan_table.setRowCount(0)
@@ -5748,7 +5819,10 @@ class AuroraWindow(QMainWindow):
     def toggle_stalker_balkan_check(self) -> None:
         if self.stalker_balkan_worker and self.stalker_balkan_worker.isRunning():
             self.stalker_balkan_worker.stop()
-            self.statusBar().showMessage("Zaustavljanje Balkan MAC testa...", 4000)
+            self.statusBar().showMessage(
+                self.translate_static_text("Zaustavljanje Balkan MAC testa..."),
+                4000,
+            )
             return
 
         pasted = self.stalker_balkan_input.toPlainText().strip()
@@ -5760,14 +5834,15 @@ class AuroraWindow(QMainWindow):
         if not profiles:
             QMessageBox.information(
                 self,
-                "Balkan MAC test",
-                "Nema portal/MAC profila za Balkan test.",
+                self.translate_static_text("Balkan MAC test"),
+                self.translate_static_text("Nema portal/MAC profila za Balkan test."),
             )
             return
 
         with table_sorting_paused(self.stalker_balkan_table):
             for row in range(self.stalker_balkan_table.rowCount()):
-                for column, value in enumerate(["—", "—", "—", "Čeka test...", "—", "—"], start=2):
+                pending = self.translate_static_text("Čeka test...")
+                for column, value in enumerate(["—", "—", "—", pending, "—", "—"], start=2):
                     self.stalker_balkan_table.setItem(row, column, QTableWidgetItem(value))
 
         self.stalker_balkan_progress.setMaximum(len(profiles))
@@ -5776,20 +5851,30 @@ class AuroraWindow(QMainWindow):
             profiles,
             sample_size=self.stalker_balkan_sample_size.value(),
             timeout=self.stalker_balkan_timeout.value(),
+            language=self.language,
         )
         self.stalker_balkan_worker.result.connect(self.add_stalker_balkan_result)
         self.stalker_balkan_worker.progress.connect(self.stalker_balkan_progress_changed)
         self.stalker_balkan_worker.log.connect(lambda message: self.statusBar().showMessage(message, 3000))
         self.stalker_balkan_worker.finished_scan.connect(self.stalker_balkan_finished)
         self.stalker_balkan_worker.start()
-        self.statusBar().showMessage("Balkan MAC test je pokrenut.", 4000)
+        self.statusBar().showMessage(
+            self.translate_static_text("Balkan MAC test je pokrenut."),
+            4000,
+        )
 
     def stop_stalker_balkan_check(self) -> None:
         if self.stalker_balkan_worker and self.stalker_balkan_worker.isRunning():
             self.stalker_balkan_worker.stop()
-            self.statusBar().showMessage("Zaustavljanje Balkan MAC testa...", 4000)
+            self.statusBar().showMessage(
+                self.translate_static_text("Zaustavljanje Balkan MAC testa..."),
+                4000,
+            )
         else:
-            self.statusBar().showMessage("Balkan MAC test nije pokrenut.", 3000)
+            self.statusBar().showMessage(
+                self.translate_static_text("Balkan MAC test nije pokrenut."),
+                3000,
+            )
 
     def stalker_balkan_progress_changed(self, done: int, total: int) -> None:
         self.stalker_balkan_progress.setMaximum(total)
@@ -5814,23 +5899,35 @@ class AuroraWindow(QMainWindow):
                     for offset, value in enumerate(values, start=2):
                         item = QTableWidgetItem(value)
                         if offset in {2, 3}:
-                            item.setForeground(QColor("#62d6a7" if value == "DA" else "#ff839f"))
+                            item.setForeground(
+                                QColor("#62d6a7" if value in {"DA", "YES"} else "#ff839f")
+                            )
                         self.stalker_balkan_table.setItem(row, offset, item)
                 return
 
     def stalker_balkan_finished(self) -> None:
         self.stalker_balkan_worker = None
-        self.statusBar().showMessage("Balkan MAC test je završen.", 5000)
+        self.statusBar().showMessage(
+            self.translate_static_text("Balkan MAC test je završen."),
+            5000,
+        )
 
     def remove_selected_stalker_balkan_rows(self) -> None:
         rows = sorted({index.row() for index in self.stalker_balkan_table.selectedIndexes()}, reverse=True)
         for row in rows:
             self.stalker_balkan_table.removeRow(row)
-        self.statusBar().showMessage(f"Uklonjeno odabranih Balkan MAC profila: {len(rows)}", 5000)
+        self.statusBar().showMessage(
+            f"{self.translate_static_text('Uklonjeno odabranih Balkan MAC profila:')} {len(rows)}",
+            5000,
+        )
 
     def export_stalker_balkan_results(self) -> None:
         if not self.stalker_balkan_table.rowCount():
-            QMessageBox.information(self, "Balkan MAC test", "Nema rezultata za export.")
+            QMessageBox.information(
+                self,
+                self.translate_static_text("Balkan MAC test"),
+                self.translate_static_text("Nema rezultata za export."),
+            )
             return
         headers = [
             "Portal URL",

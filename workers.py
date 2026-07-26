@@ -121,6 +121,66 @@ def _balkan_stats_summary(stats: dict[str, int]) -> str:
     return ", ".join(parts[:5])
 
 
+STALKER_BALKAN_TEXT = {
+    "hr": {
+        "yes": "DA",
+        "no": "NE",
+        "error": "Greška",
+        "checking": "Provjeravam Balkan kanale za {portal} / {mac}",
+        "no_live_groups": "Nema Live grupa ili portal ne vraća popis.",
+        "no_balkan": "Nema Balkan kanala u {count} Live grupa.",
+        "signal_no_programs": "Balkan signal ({stats}), ali nema programa za test.",
+        "skip_group": "Preskačem grupu {group}: {error}",
+        "link_error": "{name}: link {error}",
+        "no_link": "{name}: bez linka",
+        "sample": "{name}: {works} ({status})",
+        "hls": "{status} HLS",
+        "not_stream": "{status} nije stream",
+        "denied": "{status} odbijeno",
+        "empty": "{status} prazan odgovor",
+        "signal_prefix": "Balkan signal: {stats}. ",
+        "signal_by_name": "Balkan signal pronađen po nazivima. ",
+        "none_tested": "Kandidata {candidate_count}, ali nije testiran nijedan stream.",
+        "works_status": (
+            "Radi {working_count}/{tested_count}; kandidata {candidate_count}; "
+            "grupa provjereno {checked_categories}."
+        ),
+        "broken_status": (
+            "Balkan postoji, ali 0/{tested_count} testiranih streamova radi; "
+            "kandidata {candidate_count}; grupa provjereno {checked_categories}."
+        ),
+    },
+    "en": {
+        "yes": "YES",
+        "no": "NO",
+        "error": "Error",
+        "checking": "Checking Balkan channels for {portal} / {mac}",
+        "no_live_groups": "No Live groups, or the portal did not return a list.",
+        "no_balkan": "No Balkan channels found in {count} Live groups.",
+        "signal_no_programs": "Balkan signal ({stats}), but no programs are available to test.",
+        "skip_group": "Skipping group {group}: {error}",
+        "link_error": "{name}: link {error}",
+        "no_link": "{name}: no link",
+        "sample": "{name}: {works} ({status})",
+        "hls": "{status} HLS",
+        "not_stream": "{status} not a stream",
+        "denied": "{status} denied",
+        "empty": "{status} empty response",
+        "signal_prefix": "Balkan signal: {stats}. ",
+        "signal_by_name": "Balkan signal found by names. ",
+        "none_tested": "Candidates {candidate_count}, but no stream was tested.",
+        "works_status": (
+            "Works {working_count}/{tested_count}; candidates {candidate_count}; "
+            "checked groups {checked_categories}."
+        ),
+        "broken_status": (
+            "Balkan exists, but 0/{tested_count} tested streams work; "
+            "candidates {candidate_count}; checked groups {checked_categories}."
+        ),
+    },
+}
+
+
 def _payload_list(payload: object, keys: tuple[str, ...] = ()) -> list:
     if isinstance(payload, list):
         return payload
@@ -435,17 +495,26 @@ class StalkerBalkanMacWorker(QThread):
         sample_size: int = 4,
         timeout: int = 10,
         category_limit: int = 8,
+        language: str = "hr",
     ):
         super().__init__()
         self.profiles = profiles
         self.sample_size = min(8, max(1, int(sample_size)))
         self.timeout = min(30, max(3, int(timeout)))
         self.category_limit = min(16, max(2, int(category_limit)))
+        self.language = "en" if language == "en" else "hr"
         self.running = True
         self._random = random.SystemRandom()
 
     def stop(self) -> None:
         self.running = False
+
+    def _t(self, key: str, **values: object) -> str:
+        text = STALKER_BALKAN_TEXT[self.language].get(key, key)
+        return text.format(**values) if values else text
+
+    def _yes_no(self, works: bool) -> str:
+        return self._t("yes" if works else "no")
 
     def run(self) -> None:
         total = len(self.profiles)
@@ -463,10 +532,10 @@ class StalkerBalkanMacWorker(QThread):
         result = {
             "portal": portal,
             "mac": mac,
-            "balkan": "NE",
-            "works": "NE",
+            "balkan": self._yes_no(False),
+            "works": self._yes_no(False),
             "tested": "0/0",
-            "status": "Greška",
+            "status": self._t("error"),
             "samples": "—",
             "ping": "—",
         }
@@ -476,7 +545,7 @@ class StalkerBalkanMacWorker(QThread):
             scanner_module = _load_balkan_scanner_module()
             scanner = scanner_module.IPTVScanner(timeout=self.timeout)
 
-            self.log.emit(f"Provjeravam Balkan kanale za {portal} / {mac}")
+            self.log.emit(self._t("checking", portal=portal, mac=mac))
             if hasattr(stalker_module, "PORTAL_CONNECT_TIMEOUT"):
                 stalker_module.PORTAL_CONNECT_TIMEOUT = self.timeout
             client = stalker_module.build_auto_client(portal, mac, adult_pin="0000")
@@ -485,7 +554,7 @@ class StalkerBalkanMacWorker(QThread):
 
             categories = client.get_categories("IPTV")
             if not categories:
-                result["status"] = "Nema Live grupa ili portal ne vraća popis."
+                result["status"] = self._t("no_live_groups")
                 return result
 
             candidates, balkan_stats, checked_categories = self._collect_balkan_candidates(
@@ -496,13 +565,13 @@ class StalkerBalkanMacWorker(QThread):
             stats_text = _balkan_stats_summary(balkan_stats)
             if not candidates:
                 result["status"] = (
-                    f"Nema Balkan kanala u {len(categories)} Live grupa."
+                    self._t("no_balkan", count=len(categories))
                     if not stats_text
-                    else f"Balkan signal ({stats_text}), ali nema programa za test."
+                    else self._t("signal_no_programs", stats=stats_text)
                 )
                 return result
 
-            result["balkan"] = "DA"
+            result["balkan"] = self._yes_no(True)
             tested_samples = self._choose_samples(candidates)
             sample_results = []
             working_count = 0
@@ -514,18 +583,22 @@ class StalkerBalkanMacWorker(QThread):
                     play_url = client.resolve_play_url(item)
                     play_url = self._clean_stream_url(stalker_module, play_url)
                 except Exception as error:
-                    sample_results.append(f"{item.name}: link {self._short_error(error)}")
+                    sample_results.append(
+                        self._t("link_error", name=item.name, error=self._short_error(error))
+                    )
                     continue
                 if not play_url:
-                    sample_results.append(f"{item.name}: bez linka")
+                    sample_results.append(self._t("no_link", name=item.name))
                     continue
                 works, status = self._probe_stream(client, play_url)
                 if works:
                     working_count += 1
-                sample_results.append(f"{item.name}: {'DA' if works else 'NE'} ({status})")
+                sample_results.append(
+                    self._t("sample", name=item.name, works=self._yes_no(works), status=status)
+                )
 
             tested_count = len(sample_results)
-            result["works"] = "DA" if working_count else "NE"
+            result["works"] = self._yes_no(bool(working_count))
             result["tested"] = f"{working_count}/{tested_count}"
             result["samples"] = "; ".join(sample_results[:6]) or "—"
             result["status"] = self._status_text(
@@ -577,7 +650,9 @@ class StalkerBalkanMacWorker(QThread):
             try:
                 items = client.get_items(category, num_threads=2)
             except Exception as error:
-                self.log.emit(f"Preskačem grupu {category.name}: {self._short_error(error)}")
+                self.log.emit(
+                    self._t("skip_group", group=category.name, error=self._short_error(error))
+                )
                 continue
 
             category_candidates = []
@@ -684,18 +759,18 @@ class StalkerBalkanMacWorker(QThread):
 
             preview = chunk[:256].lstrip().lower()
             if preview.startswith(b"#extm3u"):
-                return True, f"{status} HLS"
+                return True, self._t("hls", status=status)
             if preview.startswith(b"<html") or preview.startswith(b"{") or preview.startswith(b"["):
-                return False, f"{status} nije stream"
+                return False, self._t("not_stream", status=status)
             if b"not found" in preview[:160] or b"forbidden" in preview[:160]:
-                return False, f"{status} odbijeno"
+                return False, self._t("denied", status=status)
             if "html" in content_type or "json" in content_type:
                 return False, f"{status} {content_type or 'tekst'}"
             if chunk:
                 return True, status
             if any(marker in content_type for marker in ("video", "audio", "mpegurl", "octet-stream")):
                 return True, status
-            return False, f"{status} prazan odgovor"
+            return False, self._t("empty", status=status)
         except Exception as error:
             return False, self._short_error(error)
         finally:
@@ -713,27 +788,32 @@ class StalkerBalkanMacWorker(QThread):
         checked_categories: int,
         stats_text: str,
     ) -> str:
-        prefix = (
-            f"Balkan signal: {stats_text}. "
-            if stats_text
-            else "Balkan signal pronađen po nazivima. "
-        )
+        prefix = self._t("signal_prefix", stats=stats_text) if stats_text else self._t("signal_by_name")
         if tested_count == 0:
-            return prefix + f"Kandidata {candidate_count}, ali nije testiran nijedan stream."
+            return prefix + self._t("none_tested", candidate_count=candidate_count)
         if working_count:
             return (
                 prefix
-                + f"Radi {working_count}/{tested_count}; kandidata {candidate_count}; "
-                + f"grupa provjereno {checked_categories}."
+                + self._t(
+                    "works_status",
+                    working_count=working_count,
+                    tested_count=tested_count,
+                    candidate_count=candidate_count,
+                    checked_categories=checked_categories,
+                )
             )
         return (
             prefix
-            + f"Balkan postoji, ali 0/{tested_count} testiranih streamova radi; "
-            + f"kandidata {candidate_count}; grupa provjereno {checked_categories}."
+            + self._t(
+                "broken_status",
+                tested_count=tested_count,
+                candidate_count=candidate_count,
+                checked_categories=checked_categories,
+            )
         )
 
     def _short_error(self, error: Exception) -> str:
-        name = error.__class__.__name__.replace("Exception", "") or "Greška"
+        name = error.__class__.__name__.replace("Exception", "") or self._t("error")
         message = str(error).strip()
         if len(message) > 120:
             message = message[:117] + "..."
