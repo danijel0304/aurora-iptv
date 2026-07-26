@@ -13,7 +13,7 @@ import webbrowser
 from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlencode, urlparse
+from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from PyQt6.QtCore import QSettings, QThread, QTimer, Qt, pyqtSignal
@@ -92,7 +92,7 @@ def resource_dir() -> Path:
 
 RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
-DEFAULT_APP_VERSION = "v1.1.1"
+DEFAULT_APP_VERSION = "v1.1.2"
 
 
 def app_version() -> str:
@@ -1234,6 +1234,7 @@ def patch_fusion_balkan_detection(fusion_module) -> None:
         group_name: str,
         text: str,
         source: str,
+        stream_url: str = "",
     ) -> bool:
         stats = scanner.score_text_for_balkan(text, source=source)
         if not scanner.is_balkan_detected(stats):
@@ -1251,6 +1252,7 @@ def patch_fusion_balkan_detection(fusion_module) -> None:
                 "score": str(sum(stats.values())),
                 "stats": balkan_stats_summary(stats),
                 "signals": "; ".join(reasons) if reasons else balkan_stats_summary(stats),
+                "stream_url": stream_url,
             }
         )
         return True
@@ -1263,6 +1265,7 @@ def patch_fusion_balkan_detection(fusion_module) -> None:
         name: str,
         group_name: str,
         text: str,
+        stream_url: str = "",
     ) -> bool:
         if not scanner.is_suspicious_balkan_text(text):
             return False
@@ -1292,6 +1295,7 @@ def patch_fusion_balkan_detection(fusion_module) -> None:
                     f"Dvosmisleno: {', '.join(markers[:4])}; "
                     f"ne-Balkan kontekst: {', '.join(contexts[:4])}"
                 ),
+                "stream_url": stream_url,
             }
         )
         return True
@@ -1521,6 +1525,27 @@ def patch_fusion_balkan_detection(fusion_module) -> None:
         headers = {"User-Agent": ua or "Mozilla/5.0"}
         cursor_set = False
 
+        def build_evidence_stream_url(stream: dict) -> str:
+            direct_source = str(stream.get("direct_source", "")).strip()
+            if direct_source.lower().startswith("ffmpeg "):
+                direct_source = direct_source.split(" ", 1)[1].strip()
+            if direct_source.startswith(("http://", "https://")):
+                return direct_source
+
+            stream_id = stream.get("stream_id") or stream.get("id")
+            if not stream_id:
+                return ""
+
+            container_ext = str(stream.get("container_extension", "") or "ts").strip().lstrip(".")
+            if not container_ext or container_ext.lower() == "none":
+                container_ext = "ts"
+
+            user_path = quote(str(username), safe="%")
+            password_path = quote(str(password), safe="%")
+            stream_path = quote(str(stream_id), safe="%")
+            ext_path = quote(container_ext, safe="")
+            return f"{server.rstrip('/')}/live/{user_path}/{password_path}/{stream_path}.{ext_path}"
+
         try:
             QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
             cursor_set = True
@@ -1591,7 +1616,18 @@ def patch_fusion_balkan_detection(fusion_module) -> None:
                                 group_name,
                             ]
                         )
-                        add_balkan_evidence_row(rows, seen, scanner, "Program", name, group_name, text, "stream")
+                        stream_play_url = build_evidence_stream_url(stream)
+                        add_balkan_evidence_row(
+                            rows,
+                            seen,
+                            scanner,
+                            "Program",
+                            name,
+                            group_name,
+                            text,
+                            "stream",
+                            stream_play_url,
+                        )
                         add_suspicious_evidence_row(
                             rows,
                             seen,
@@ -1600,6 +1636,7 @@ def patch_fusion_balkan_detection(fusion_module) -> None:
                             name,
                             group_name,
                             text,
+                            stream_play_url,
                         )
                         if len(rows) >= 200:
                             break
@@ -1637,11 +1674,49 @@ def patch_fusion_balkan_detection(fusion_module) -> None:
         evidence_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         for index, item in enumerate(rows):
             values = [item["type"], item["name"], item["group"], item["score"], item["stats"], item["signals"]]
+            stream_url = item.get("stream_url", "")
             for column, value in enumerate(values):
                 cell = QTableWidgetItem(value)
+                cell.setData(Qt.ItemDataRole.UserRole, stream_url)
+                if stream_url:
+                    cell.setToolTip("Dvoklik pokreće stream u VLC playeru.")
                 if column in (0, 3, 4):
                     cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                 evidence_table.setItem(index, column, cell)
+
+        def play_evidence_stream(table_item: QTableWidgetItem) -> None:
+            stream_url = table_item.data(Qt.ItemDataRole.UserRole)
+            if not stream_url:
+                QMessageBox.information(dialog, "VLC player", "Dvoklik radi samo na redovima programa.")
+                return
+
+            player_field = getattr(
+                self,
+                "txt_player_win" if sys.platform.startswith("win") else "txt_player_lin",
+                None,
+            )
+            player_path = player_field.text().strip() if player_field else ""
+            if not player_path:
+                player_path = shutil.which("vlc") or ""
+                if player_path and player_field:
+                    player_field.setText(player_path)
+
+            if not player_path:
+                QMessageBox.warning(self, "VLC player", "Podesite putanju do Playera u Balkan IPTV postavkama.")
+                return
+
+            try:
+                if not sys.platform.startswith("win") and " " in player_path:
+                    command = player_path.split()
+                    command.append(str(stream_url))
+                    subprocess.Popen(command)
+                else:
+                    subprocess.Popen([player_path, str(stream_url)])
+                self.statusBar().showMessage("Stream je poslan u VLC player.", 5000)
+            except Exception as error:
+                QMessageBox.critical(self, "VLC player", f"VLC nije moguće pokrenuti:\n{error}")
+
+        evidence_table.itemDoubleClicked.connect(play_evidence_stream)
         layout.addWidget(evidence_table)
 
         def set_suspicious_row_decision(is_balkan: bool) -> None:
