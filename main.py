@@ -5,9 +5,12 @@ import importlib.util
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 import types
 import webbrowser
 from contextlib import contextmanager
@@ -92,7 +95,7 @@ def resource_dir() -> Path:
 
 RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
-DEFAULT_APP_VERSION = "v1.1.2"
+DEFAULT_APP_VERSION = "v1.1.3"
 
 
 def app_version() -> str:
@@ -200,16 +203,95 @@ class UpdateCheckWorker(QThread):
             latest = str(payload.get("tag_name") or "")
             if not latest:
                 raise RuntimeError("GitHub nije vratio oznaku verzije.")
+            assets = []
+            for asset in payload.get("assets", []):
+                if not isinstance(asset, dict):
+                    continue
+                name = str(asset.get("name") or "")
+                download_url = str(asset.get("browser_download_url") or "")
+                if not name or not download_url:
+                    continue
+                assets.append(
+                    {
+                        "name": name,
+                        "download_url": download_url,
+                        "size": int(asset.get("size") or 0),
+                    }
+                )
             self.checked.emit(
                 {
                     "latest": latest,
                     "current": APP_VERSION,
                     "url": str(payload.get("html_url") or GITHUB_RELEASES_URL),
                     "is_newer": is_newer_version(latest, APP_VERSION),
+                    "assets": assets,
                 }
             )
         except Exception as error:
             self.failed.emit(str(error) or type(error).__name__)
+
+
+class UpdateDownloadWorker(QThread):
+    progress = pyqtSignal(int, str)
+    succeeded = pyqtSignal(dict)
+    failed = pyqtSignal(str)
+
+    def __init__(self, asset: dict, parent=None):
+        super().__init__(parent)
+        self.asset = asset
+
+    def run(self) -> None:
+        partial = None
+        try:
+            name = str(self.asset.get("name") or "")
+            download_url = str(self.asset.get("download_url") or "")
+            if not name or not download_url:
+                raise RuntimeError("Nedostaje release asset za update.")
+
+            update_dir = Path(tempfile.gettempdir()) / "aurora-iptv-updates"
+            update_dir.mkdir(parents=True, exist_ok=True)
+            target = update_dir / name
+            partial = target.with_name(f"{target.name}.part")
+            if partial.exists():
+                partial.unlink()
+
+            request = Request(
+                download_url,
+                headers={"User-Agent": "Aurora-IPTV/self-updater"},
+            )
+            with urlopen(request, timeout=20) as response:
+                total = int(response.headers.get("Content-Length") or self.asset.get("size") or 0)
+                downloaded = 0
+                with open(partial, "wb") as handle:
+                    while True:
+                        if self.isInterruptionRequested():
+                            raise RuntimeError("Preuzimanje updatea je prekinuto.")
+                        chunk = response.read(1024 * 512)
+                        if not chunk:
+                            break
+                        handle.write(chunk)
+                        downloaded += len(chunk)
+                        if total:
+                            percent = max(0, min(100, int(downloaded * 100 / total)))
+                            self.progress.emit(percent, f"Preuzimam update... {percent}%")
+            partial.replace(target)
+            if target.suffix.lower() in {".appimage", ".exe"}:
+                try:
+                    target.chmod(target.stat().st_mode | 0o755)
+                except OSError:
+                    pass
+            result = dict(self.asset)
+            result["path"] = str(target)
+            self.progress.emit(100, "Update je preuzet.")
+            self.succeeded.emit(result)
+        except Exception as error:
+            if partial:
+                try:
+                    partial.unlink()
+                except Exception:
+                    pass
+            self.failed.emit(str(error) or type(error).__name__)
+
 
 STYLE = """
 * { font-family: "Segoe UI", "Inter", sans-serif; font-size: 13px; }
@@ -1882,7 +1964,10 @@ class AuroraWindow(QMainWindow):
         self.stalker_check_worker: StalkerProfileCheckWorker | None = None
         self.playlist_worker: PlaylistWorker | None = None
         self.update_check_worker: UpdateCheckWorker | None = None
+        self.update_download_worker: UpdateDownloadWorker | None = None
         self.latest_release_url = GITHUB_RELEASES_URL
+        self.latest_update_payload: dict | None = None
+        self._prompted_update_versions: set[str] = set()
         self.playlist_rows: dict[str, list[dict[str, str]]] = {
             "Live": [],
             "VOD": [],
@@ -2323,6 +2408,12 @@ class AuroraWindow(QMainWindow):
         )
 
     def start_update_check(self, manual: bool = True) -> None:
+        if self.update_download_worker and self.update_download_worker.isRunning():
+            message = "Update je već u tijeku."
+            if hasattr(self, "update_status_label"):
+                self.update_status_label.setText(message)
+            self.statusBar().showMessage(message, 5000)
+            return
         if self.update_check_worker and self.update_check_worker.isRunning():
             message = self.translate_static_text("Provjera updatea je već pokrenuta.")
             if hasattr(self, "update_status_label"):
@@ -2350,6 +2441,7 @@ class AuroraWindow(QMainWindow):
         latest = str(payload.get("latest") or "")
         current = str(payload.get("current") or APP_VERSION)
         self.latest_release_url = str(payload.get("url") or GITHUB_RELEASES_URL)
+        self.latest_update_payload = payload
         if payload.get("is_newer"):
             message = (
                 f"{self.translate_static_text('Nova verzija dostupna:')} {latest} "
@@ -2360,7 +2452,9 @@ class AuroraWindow(QMainWindow):
         if hasattr(self, "update_status_label"):
             self.update_status_label.setText(message)
         self.statusBar().showMessage(message, 7000)
-        if manual:
+        if payload.get("is_newer"):
+            self.offer_self_update(payload, manual)
+        elif manual:
             QMessageBox.information(self, self.translate_static_text("Ažuriranja"), message)
 
     def update_check_failed(self, error: str, manual: bool) -> None:
@@ -2373,6 +2467,276 @@ class AuroraWindow(QMainWindow):
 
     def open_latest_release(self) -> None:
         webbrowser.open(self.latest_release_url or GITHUB_RELEASES_URL)
+
+    def update_asset_suffixes(self) -> list[str]:
+        if sys.platform.startswith("win"):
+            return ["windows-x86_64.exe"]
+        if sys.platform.startswith("linux"):
+            if os.environ.get("APPIMAGE"):
+                return ["linux-x86_64.AppImage"]
+            executable = Path(sys.executable).resolve()
+            if getattr(sys, "frozen", False) and str(executable).startswith("/usr/"):
+                return ["linux-amd64.deb", "linux-x86_64.AppImage"]
+            if getattr(sys, "frozen", False):
+                return ["linux-x86_64.tar.gz", "linux-x86_64.AppImage", "linux-amd64.deb"]
+            return ["linux-x86_64.AppImage", "linux-x86_64.tar.gz", "linux-amd64.deb"]
+        return []
+
+    def select_update_asset(self, assets: list[dict]) -> dict | None:
+        for suffix in self.update_asset_suffixes():
+            for asset in assets:
+                name = str(asset.get("name") or "")
+                if name.lower().endswith(suffix.lower()):
+                    return asset
+        return None
+
+    def offer_self_update(self, payload: dict, manual: bool) -> None:
+        latest = str(payload.get("latest") or "")
+        current = str(payload.get("current") or APP_VERSION)
+        if not manual and latest in self._prompted_update_versions:
+            return
+        if latest:
+            self._prompted_update_versions.add(latest)
+
+        asset = self.select_update_asset(payload.get("assets", []))
+        if not asset:
+            message = (
+                f"Nova verzija je dostupna: {latest} (trenutna {current}).\n\n"
+                "Za ovaj sustav nije pronađen automatski paket. Otvoriti GitHub release?"
+            )
+            if QMessageBox.question(
+                self,
+                self.translate_static_text("Ažuriranja"),
+                message,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes,
+            ) == QMessageBox.StandardButton.Yes:
+                self.open_latest_release()
+            return
+
+        answer = QMessageBox.question(
+            self,
+            self.translate_static_text("Ažuriranja"),
+            (
+                f"Nova verzija je dostupna: {latest}\n"
+                f"Trenutna verzija: {current}\n\n"
+                f"Paket: {asset.get('name')}\n\n"
+                "Želiš preuzeti i instalirati update sada?"
+            ),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes,
+        )
+        if answer == QMessageBox.StandardButton.Yes:
+            self.start_self_update(asset)
+
+    def start_self_update(self, asset: dict) -> None:
+        if self.update_download_worker and self.update_download_worker.isRunning():
+            return
+        if hasattr(self, "header_update_button"):
+            self.header_update_button.setEnabled(False)
+        self.update_download_worker = UpdateDownloadWorker(asset, self)
+        self.update_download_worker.progress.connect(self.update_download_progress)
+        self.update_download_worker.succeeded.connect(self.update_download_finished)
+        self.update_download_worker.failed.connect(self.update_download_failed)
+        self.update_download_worker.finished.connect(self.update_download_worker_finished)
+        self.update_download_worker.start()
+
+    def update_download_progress(self, percent: int, message: str) -> None:
+        if hasattr(self, "update_status_label"):
+            self.update_status_label.setText(message)
+        self.statusBar().showMessage(message, 3000)
+
+    def update_download_worker_finished(self) -> None:
+        self.update_download_worker = None
+        if hasattr(self, "header_update_button"):
+            self.header_update_button.setEnabled(True)
+
+    def update_download_failed(self, error: str) -> None:
+        message = f"Update nije uspio: {error}"
+        if hasattr(self, "update_status_label"):
+            self.update_status_label.setText(message)
+        self.statusBar().showMessage(message, 7000)
+        QMessageBox.critical(self, self.translate_static_text("Ažuriranja"), message)
+
+    def update_download_finished(self, result: dict) -> None:
+        try:
+            self.install_downloaded_update(result)
+        except Exception as error:
+            path = str(result.get("path") or "")
+            message = (
+                f"Update je preuzet, ali automatska instalacija nije uspjela:\n{error}"
+            )
+            if path:
+                message += f"\n\nPreuzeta datoteka:\n{path}"
+            if hasattr(self, "update_status_label"):
+                self.update_status_label.setText("Update je preuzet, ali nije instaliran.")
+            QMessageBox.critical(self, self.translate_static_text("Ažuriranja"), message)
+
+    @staticmethod
+    def current_executable_path() -> Path | None:
+        if not getattr(sys, "frozen", False):
+            return None
+        try:
+            return Path(sys.executable).resolve()
+        except OSError:
+            return None
+
+    def install_downloaded_update(self, result: dict) -> None:
+        name = str(result.get("name") or "").lower()
+        path = Path(str(result.get("path") or ""))
+        if not path.exists():
+            raise FileNotFoundError(str(path))
+
+        if sys.platform.startswith("win") and name.endswith(".exe"):
+            target = self.current_executable_path()
+            if not target:
+                self.open_downloaded_update(path)
+                return
+            self.launch_replacement_update(path, target)
+            return
+
+        if sys.platform.startswith("linux") and name.endswith(".appimage"):
+            appimage = os.environ.get("APPIMAGE")
+            if appimage:
+                self.launch_replacement_update(path, Path(appimage).resolve())
+            else:
+                path.chmod(path.stat().st_mode | 0o755)
+                subprocess.Popen([str(path)])
+                self.statusBar().showMessage("Nova AppImage verzija je pokrenuta.", 7000)
+            return
+
+        if sys.platform.startswith("linux") and name.endswith(".tar.gz"):
+            target = self.current_executable_path()
+            if not target:
+                self.open_downloaded_update(path)
+                return
+            binary = self.extract_portable_update_binary(path)
+            self.launch_replacement_update(binary, target, cleanup_paths=[path])
+            return
+
+        if sys.platform.startswith("linux") and name.endswith(".deb"):
+            self.install_deb_update(path)
+            return
+
+        self.open_downloaded_update(path)
+
+    def open_downloaded_update(self, path: Path) -> None:
+        message = (
+            "Update je preuzet, ali ova pokrenuta verzija ne podržava potpunu "
+            f"samoinstalaciju.\n\nDatoteka:\n{path}"
+        )
+        if hasattr(self, "update_status_label"):
+            self.update_status_label.setText(f"Update je preuzet: {path}")
+        QMessageBox.information(self, self.translate_static_text("Ažuriranja"), message)
+
+    def launch_replacement_update(
+        self,
+        source: Path,
+        target: Path,
+        cleanup_paths: list[Path] | None = None,
+    ) -> None:
+        cleanup_paths = cleanup_paths or []
+        if sys.platform.startswith("win"):
+            script = Path(tempfile.gettempdir()) / f"aurora-iptv-update-{os.getpid()}.bat"
+            script.write_text(
+                "\n".join(
+                    [
+                        "@echo off",
+                        "setlocal",
+                        f"set \"PID={os.getpid()}\"",
+                        f"set \"SOURCE={source}\"",
+                        f"set \"TARGET={target}\"",
+                        ":wait",
+                        "tasklist /FI \"PID eq %PID%\" | find \"%PID%\" >nul",
+                        "if not errorlevel 1 (",
+                        "  timeout /t 1 /nobreak >nul",
+                        "  goto wait",
+                        ")",
+                        "copy /Y \"%SOURCE%\" \"%TARGET%\" >nul",
+                        "start \"\" \"%TARGET%\"",
+                        "del \"%SOURCE%\" >nul 2>nul",
+                        "del \"%~f0\" >nul 2>nul",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            subprocess.Popen(["cmd", "/c", str(script)])
+        else:
+            script = Path(tempfile.gettempdir()) / f"aurora-iptv-update-{os.getpid()}.sh"
+            cleanup = " ".join(shlex.quote(str(path)) for path in cleanup_paths)
+            script.write_text(
+                "\n".join(
+                    [
+                        "#!/bin/sh",
+                        "set -eu",
+                        f"PID={os.getpid()}",
+                        f"SOURCE={shlex.quote(str(source))}",
+                        f"TARGET={shlex.quote(str(target))}",
+                        "while kill -0 \"$PID\" 2>/dev/null; do sleep 0.5; done",
+                        "cp -f \"$SOURCE\" \"$TARGET\"",
+                        "chmod +x \"$TARGET\"",
+                        "nohup \"$TARGET\" >/dev/null 2>&1 &",
+                        f"rm -f \"$SOURCE\" {cleanup} \"$0\"",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            script.chmod(script.stat().st_mode | 0o755)
+            subprocess.Popen(["sh", str(script)])
+
+        QMessageBox.information(
+            self,
+            self.translate_static_text("Ažuriranja"),
+            "Update je preuzet. Aurora će se zatvoriti, zamijeniti aplikaciju i ponovno pokrenuti.",
+        )
+        if hasattr(self, "update_status_label"):
+            self.update_status_label.setText("Update se instalira...")
+        QTimer.singleShot(300, QApplication.instance().quit)
+
+    def extract_portable_update_binary(self, archive_path: Path) -> Path:
+        extract_dir = Path(tempfile.mkdtemp(prefix="aurora-iptv-update-"))
+        binary_path = extract_dir / "AuroraIPTV"
+        with tarfile.open(archive_path, "r:gz") as archive:
+            member = next(
+                (
+                    item
+                    for item in archive.getmembers()
+                    if item.isfile() and Path(item.name).name == "AuroraIPTV"
+                ),
+                None,
+            )
+            if not member:
+                raise RuntimeError("U portable arhivi nije pronađen AuroraIPTV.")
+            source_file = archive.extractfile(member)
+            if not source_file:
+                raise RuntimeError("AuroraIPTV nije moguće pročitati iz portable arhive.")
+            with open(binary_path, "wb") as handle:
+                shutil.copyfileobj(source_file, handle)
+        binary_path.chmod(binary_path.stat().st_mode | 0o755)
+        return binary_path
+
+    def install_deb_update(self, path: Path) -> None:
+        apt = shutil.which("apt") or "/usr/bin/apt"
+        if hasattr(os, "geteuid") and os.geteuid() == 0:
+            subprocess.Popen([apt, "install", "-y", str(path)])
+        else:
+            pkexec = shutil.which("pkexec")
+            if pkexec:
+                subprocess.Popen([pkexec, apt, "install", "-y", str(path)])
+            else:
+                opener = shutil.which("xdg-open")
+                if not opener:
+                    raise RuntimeError("Nije pronađen pkexec ni xdg-open za instalaciju .deb paketa.")
+                subprocess.Popen([opener, str(path)])
+        if hasattr(self, "update_status_label"):
+            self.update_status_label.setText("Instalacija .deb updatea je pokrenuta.")
+        QMessageBox.information(
+            self,
+            self.translate_static_text("Ažuriranja"),
+            "Instalacija updatea je pokrenuta. Ako sustav zatraži lozinku, potvrdi instalaciju i zatim ponovno pokreni Auroru.",
+        )
 
     def open_paypal_donation(self) -> None:
         webbrowser.open(PAYPAL_DONATION_URL)
@@ -5772,6 +6136,7 @@ class AuroraWindow(QMainWindow):
             self.stalker_check_worker,
             self.playlist_worker,
             self.update_check_worker,
+            self.update_download_worker,
         ]:
             if worker and worker.isRunning():
                 if hasattr(worker, "stop"):
