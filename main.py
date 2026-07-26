@@ -92,7 +92,7 @@ def resource_dir() -> Path:
 
 RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
-DEFAULT_APP_VERSION = "v1.1.0"
+DEFAULT_APP_VERSION = "v1.1.1"
 
 
 def app_version() -> str:
@@ -745,6 +745,7 @@ EN_TRANSLATIONS = {
     "Ukloni Offline": "Remove offline",
     "Ukloni bez Balkana": "Remove without Balkan",
     "Ukloni neispravne": "Remove invalid",
+    "Izbriši streamove koji ne rade": "Delete broken streams",
     "Učitaj liste": "Load lists",
     "Prikaži broj stavki (sporo)": "Show item count (slow)",
     "Provjeri linkove nakon exporta": "Check links after export",
