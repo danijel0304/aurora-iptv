@@ -68,6 +68,7 @@ from core import (
 from workers import (
     MacHttpWorker,
     PlaylistWorker,
+    StalkerBalkanMacWorker,
     StalkerProfileCheckWorker,
     XtreamScanWorker,
     parse_mac_lines,
@@ -95,7 +96,7 @@ def resource_dir() -> Path:
 
 RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
-DEFAULT_APP_VERSION = "v1.1.3"
+DEFAULT_APP_VERSION = "v1.1.4"
 
 
 def app_version() -> str:
@@ -1962,6 +1963,7 @@ class AuroraWindow(QMainWindow):
         self.scan_worker: XtreamScanWorker | None = None
         self.mac_worker: MacHttpWorker | None = None
         self.stalker_check_worker: StalkerProfileCheckWorker | None = None
+        self.stalker_balkan_worker: StalkerBalkanMacWorker | None = None
         self.playlist_worker: PlaylistWorker | None = None
         self.update_check_worker: UpdateCheckWorker | None = None
         self.update_download_worker: UpdateDownloadWorker | None = None
@@ -3705,6 +3707,7 @@ class AuroraWindow(QMainWindow):
         self.stalker_tabs.addTab(profiles_page, "Profili")
         self.stalker_tabs.addTab(self._mac_grouper(), "URL → MAC grupiranje")
         self.stalker_tabs.addTab(self._stalker_check_tab(), "Provjera portala")
+        self.stalker_tabs.addTab(self._stalker_balkan_mac_tab(), "Balkan MAC test")
 
         studio_page = QWidget()
         studio_layout = QVBoxLayout(studio_page)
@@ -3956,6 +3959,100 @@ class AuroraWindow(QMainWindow):
         layout.addWidget(self.stalker_check_progress)
         self.stalker_check_table = table(["Portal URL", "MAC adresa", "Radi", "Status", "Vrijeme"])
         layout.addWidget(self.stalker_check_table, 1)
+        return page
+
+    def _stalker_balkan_mac_tab(self) -> QWidget:
+        page = QWidget()
+        layout = QVBoxLayout(page)
+        layout.addWidget(
+            tool_description(
+                "Za svaki portal/MAC učitava Live grupe, pronalazi Balkan programe, "
+                "radi create_link/token i nasumično proba nekoliko streamova."
+            )
+        )
+
+        controls = QHBoxLayout()
+        load_valid = button(
+            "Učitaj ispravne iz Provjere portala",
+            tooltip="Prebaci samo redove gdje je Provjera portala označila Radi = DA.",
+        )
+        load_valid.clicked.connect(self.load_stalker_balkan_from_check)
+        load_profiles = button("Učitaj iz profila")
+        load_profiles.clicked.connect(self.load_stalker_balkan_from_profiles)
+        paste_profiles = button("Zalijepi i prepoznaj")
+        paste_profiles.clicked.connect(
+            lambda: self.add_stalker_balkan_profiles_from_text(QApplication.clipboard().text())
+        )
+        clear_rows = button("Očisti tablicu")
+        clear_rows.clicked.connect(lambda: self.stalker_balkan_table.setRowCount(0))
+        remove_selected = button("Ukloni odabrano", danger=True)
+        remove_selected.clicked.connect(self.remove_selected_stalker_balkan_rows)
+        export_results = button("Export rezultata")
+        export_results.clicked.connect(self.export_stalker_balkan_results)
+        stop_check = button("Zaustavi test")
+        stop_check.clicked.connect(self.stop_stalker_balkan_check)
+        run_check = button("Provjeri Balkan MAC", primary=True)
+        run_check.clicked.connect(self.toggle_stalker_balkan_check)
+
+        controls.addWidget(load_valid)
+        controls.addWidget(load_profiles)
+        controls.addWidget(paste_profiles)
+        controls.addStretch()
+        controls.addWidget(clear_rows)
+        controls.addWidget(remove_selected)
+        controls.addWidget(export_results)
+        controls.addWidget(stop_check)
+        controls.addWidget(run_check)
+        layout.addLayout(controls)
+
+        options = QHBoxLayout()
+        options.addWidget(QLabel("Nasumičnih streamova po MAC-u"))
+        self.stalker_balkan_sample_size = QSpinBox()
+        self.stalker_balkan_sample_size.setRange(1, 8)
+        self.stalker_balkan_sample_size.setValue(4)
+        options.addWidget(self.stalker_balkan_sample_size)
+        options.addWidget(QLabel("Timeout"))
+        self.stalker_balkan_timeout = QSpinBox()
+        self.stalker_balkan_timeout.setRange(3, 30)
+        self.stalker_balkan_timeout.setValue(10)
+        self.stalker_balkan_timeout.setSuffix(" s")
+        options.addWidget(self.stalker_balkan_timeout)
+        options.addStretch()
+        layout.addLayout(options)
+
+        self.stalker_balkan_input = QTextEdit()
+        self.stalker_balkan_input.setPlaceholderText(
+            "Zalijepi portal URL i MAC adrese ako ne učitavaš iz drugih Stalker tabova."
+        )
+        self.stalker_balkan_input.setMaximumHeight(110)
+        layout.addWidget(self.stalker_balkan_input)
+
+        self.stalker_balkan_progress = QProgressBar()
+        layout.addWidget(self.stalker_balkan_progress)
+        self.stalker_balkan_table = table(
+            [
+                "Portal URL",
+                "MAC adresa",
+                "Balkan",
+                "Radi Balkan",
+                "Testirano",
+                "Status",
+                "Uzorci",
+                "Vrijeme",
+            ]
+        )
+        header = self.stalker_balkan_table.horizontalHeader()
+        for column in range(header.count()):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Interactive)
+        header.setStretchLastSection(True)
+        self.stalker_balkan_table.setColumnWidth(0, 230)
+        self.stalker_balkan_table.setColumnWidth(1, 130)
+        self.stalker_balkan_table.setColumnWidth(2, 80)
+        self.stalker_balkan_table.setColumnWidth(3, 100)
+        self.stalker_balkan_table.setColumnWidth(4, 95)
+        self.stalker_balkan_table.setColumnWidth(5, 360)
+        self.stalker_balkan_table.setColumnWidth(6, 520)
+        layout.addWidget(self.stalker_balkan_table, 1)
         return page
 
     def _vault_tab(self) -> QWidget:
@@ -5578,6 +5675,182 @@ class AuroraWindow(QMainWindow):
             return
         self.save_text("\n\n".join(blocks), "stalker_ispravni_profili.txt")
 
+    def stalker_balkan_profiles(self) -> list[tuple[str, str]]:
+        profiles = []
+        for row in range(self.stalker_balkan_table.rowCount()):
+            portal_item = self.stalker_balkan_table.item(row, 0)
+            mac_item = self.stalker_balkan_table.item(row, 1)
+            if not portal_item or not mac_item:
+                continue
+            portal = portal_item.text().strip()
+            mac = mac_item.text().strip()
+            if portal and mac:
+                profiles.append((portal, mac))
+        return profiles
+
+    def add_stalker_balkan_profiles_from_text(self, text: str) -> None:
+        parsed = group_macs_by_url(text, global_dedupe=False)
+        existing = set(self.stalker_balkan_profiles())
+        added = 0
+        with table_sorting_paused(self.stalker_balkan_table):
+            for portal, macs in parsed.groups:
+                for mac in macs:
+                    if (portal, mac) in existing:
+                        continue
+                    row = self.stalker_balkan_table.rowCount()
+                    self.stalker_balkan_table.insertRow(row)
+                    values = [portal, mac, "—", "—", "—", "—", "—", "—"]
+                    for column, value in enumerate(values):
+                        self.stalker_balkan_table.setItem(row, column, QTableWidgetItem(value))
+                    existing.add((portal, mac))
+                    added += 1
+        if parsed.ignored:
+            self.statusBar().showMessage(
+                f"Dodano {added} profila; ignorirano MAC adresa bez portala: {parsed.ignored}",
+                6000,
+            )
+        else:
+            self.statusBar().showMessage(f"Dodano Balkan MAC profila: {added}", 4000)
+
+    def load_stalker_balkan_from_profiles(self) -> None:
+        rows = []
+        for row in range(self.stalker_table.rowCount()):
+            rows.append(
+                f"{self.stalker_table.item(row, 0).text()}\n"
+                f"{self.stalker_table.item(row, 1).text()}"
+            )
+        if not rows:
+            QMessageBox.information(self, "Balkan MAC test", "Nema Stalker profila za učitavanje.")
+            return
+        self.stalker_balkan_table.setRowCount(0)
+        self.add_stalker_balkan_profiles_from_text("\n\n".join(rows))
+
+    def load_stalker_balkan_from_check(self) -> None:
+        rows = []
+        for row in range(self.stalker_check_table.rowCount()):
+            works_item = self.stalker_check_table.item(row, 2)
+            if not works_item or works_item.text() != "DA":
+                continue
+            rows.append(
+                f"{self.stalker_check_table.item(row, 0).text()}\n"
+                f"{self.stalker_check_table.item(row, 1).text()}"
+            )
+        if not rows:
+            QMessageBox.information(
+                self,
+                "Balkan MAC test",
+                "Nema ispravnih profila u tabu Provjera portala.",
+            )
+            return
+        self.stalker_balkan_table.setRowCount(0)
+        self.add_stalker_balkan_profiles_from_text("\n\n".join(rows))
+
+    def toggle_stalker_balkan_check(self) -> None:
+        if self.stalker_balkan_worker and self.stalker_balkan_worker.isRunning():
+            self.stalker_balkan_worker.stop()
+            self.statusBar().showMessage("Zaustavljanje Balkan MAC testa...", 4000)
+            return
+
+        pasted = self.stalker_balkan_input.toPlainText().strip()
+        if pasted:
+            self.add_stalker_balkan_profiles_from_text(pasted)
+            self.stalker_balkan_input.clear()
+
+        profiles = self.stalker_balkan_profiles()
+        if not profiles:
+            QMessageBox.information(
+                self,
+                "Balkan MAC test",
+                "Nema portal/MAC profila za Balkan test.",
+            )
+            return
+
+        with table_sorting_paused(self.stalker_balkan_table):
+            for row in range(self.stalker_balkan_table.rowCount()):
+                for column, value in enumerate(["—", "—", "—", "Čeka test...", "—", "—"], start=2):
+                    self.stalker_balkan_table.setItem(row, column, QTableWidgetItem(value))
+
+        self.stalker_balkan_progress.setMaximum(len(profiles))
+        self.stalker_balkan_progress.setValue(0)
+        self.stalker_balkan_worker = StalkerBalkanMacWorker(
+            profiles,
+            sample_size=self.stalker_balkan_sample_size.value(),
+            timeout=self.stalker_balkan_timeout.value(),
+        )
+        self.stalker_balkan_worker.result.connect(self.add_stalker_balkan_result)
+        self.stalker_balkan_worker.progress.connect(self.stalker_balkan_progress_changed)
+        self.stalker_balkan_worker.log.connect(lambda message: self.statusBar().showMessage(message, 3000))
+        self.stalker_balkan_worker.finished_scan.connect(self.stalker_balkan_finished)
+        self.stalker_balkan_worker.start()
+        self.statusBar().showMessage("Balkan MAC test je pokrenut.", 4000)
+
+    def stop_stalker_balkan_check(self) -> None:
+        if self.stalker_balkan_worker and self.stalker_balkan_worker.isRunning():
+            self.stalker_balkan_worker.stop()
+            self.statusBar().showMessage("Zaustavljanje Balkan MAC testa...", 4000)
+        else:
+            self.statusBar().showMessage("Balkan MAC test nije pokrenut.", 3000)
+
+    def stalker_balkan_progress_changed(self, done: int, total: int) -> None:
+        self.stalker_balkan_progress.setMaximum(total)
+        self.stalker_balkan_progress.setValue(done)
+
+    def add_stalker_balkan_result(self, result: dict[str, str]) -> None:
+        for row in range(self.stalker_balkan_table.rowCount()):
+            portal_item = self.stalker_balkan_table.item(row, 0)
+            mac_item = self.stalker_balkan_table.item(row, 1)
+            if not portal_item or not mac_item:
+                continue
+            if portal_item.text() == result["portal"] and mac_item.text() == result["mac"]:
+                values = [
+                    result["balkan"],
+                    result["works"],
+                    result["tested"],
+                    result["status"],
+                    result["samples"],
+                    result["ping"],
+                ]
+                with table_sorting_paused(self.stalker_balkan_table):
+                    for offset, value in enumerate(values, start=2):
+                        item = QTableWidgetItem(value)
+                        if offset in {2, 3}:
+                            item.setForeground(QColor("#62d6a7" if value == "DA" else "#ff839f"))
+                        self.stalker_balkan_table.setItem(row, offset, item)
+                return
+
+    def stalker_balkan_finished(self) -> None:
+        self.stalker_balkan_worker = None
+        self.statusBar().showMessage("Balkan MAC test je završen.", 5000)
+
+    def remove_selected_stalker_balkan_rows(self) -> None:
+        rows = sorted({index.row() for index in self.stalker_balkan_table.selectedIndexes()}, reverse=True)
+        for row in rows:
+            self.stalker_balkan_table.removeRow(row)
+        self.statusBar().showMessage(f"Uklonjeno odabranih Balkan MAC profila: {len(rows)}", 5000)
+
+    def export_stalker_balkan_results(self) -> None:
+        if not self.stalker_balkan_table.rowCount():
+            QMessageBox.information(self, "Balkan MAC test", "Nema rezultata za export.")
+            return
+        headers = [
+            "Portal URL",
+            "MAC adresa",
+            "Balkan",
+            "Radi Balkan",
+            "Testirano",
+            "Status",
+            "Uzorci",
+            "Vrijeme",
+        ]
+        lines = ["\t".join(headers)]
+        for row in range(self.stalker_balkan_table.rowCount()):
+            values = []
+            for column in range(len(headers)):
+                item = self.stalker_balkan_table.item(row, column)
+                values.append((item.text() if item else "").replace("\t", " "))
+            lines.append("\t".join(values))
+        self.save_text("\n".join(lines), "stalker_balkan_mac_rezultati.txt")
+
     def refresh_vault(self) -> None:
         rows = self.vault.rows()
         with table_sorting_paused(self.vault_table):
@@ -6134,6 +6407,7 @@ class AuroraWindow(QMainWindow):
             self.scan_worker,
             self.mac_worker,
             self.stalker_check_worker,
+            self.stalker_balkan_worker,
             self.playlist_worker,
             self.update_check_worker,
             self.update_download_worker,

@@ -1,15 +1,124 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
+import random
 import re
+import sys
 import time
 from datetime import datetime
+from pathlib import Path
+import types
+from typing import Any
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 import httpx
 from PyQt6.QtCore import QThread, pyqtSignal
 
-from core import normalize_mac, parse_xtream_url
+from core import normalize_mac, normalize_url, parse_xtream_url
+
+
+STALKER_STUDIO_FILENAME = "IPTV_List_Generator_3.0_FULL_FIXED_v3_EXPIRY_PATCHED_v14_AUTO_THREADS.py"
+_STALKER_STUDIO_MODULE: types.ModuleType | None = None
+_BALKAN_SCANNER_MODULE: types.ModuleType | None = None
+
+
+def _resource_bases() -> list[Path]:
+    bases: list[Path] = []
+    frozen_base = getattr(sys, "_MEIPASS", "")
+    if frozen_base:
+        bases.append(Path(frozen_base))
+    bases.append(Path(__file__).resolve().parent)
+    bases.append(Path.cwd())
+    unique: list[Path] = []
+    for base in bases:
+        resolved = base.expanduser()
+        if resolved not in unique:
+            unique.append(resolved)
+    return unique
+
+
+def _find_resource(*parts: str) -> Path:
+    candidates = [base.joinpath(*parts) for base in _resource_bases()]
+    for path in candidates:
+        if path.is_file():
+            return path
+    searched = "\n".join(str(path) for path in candidates)
+    raise FileNotFoundError(f"Nedostaje datoteka resursa:\n{searched}")
+
+
+def _load_stalker_studio_module() -> types.ModuleType:
+    global _STALKER_STUDIO_MODULE
+    if _STALKER_STUDIO_MODULE:
+        return _STALKER_STUDIO_MODULE
+
+    source_path = _find_resource("vendor", "stalker_studio", STALKER_STUDIO_FILENAME)
+    source = source_path.read_text(encoding="utf-8")
+    replacements = {
+        "from PySide6 import QtCore, QtGui, QtWidgets": "from PyQt6 import QtCore, QtGui, QtWidgets",
+        "QtCore.Signal": "QtCore.pyqtSignal",
+        "QtCore.Slot": "QtCore.pyqtSlot",
+        "QtCore.Qt.Unchecked": "QtCore.Qt.CheckState.Unchecked",
+        "QtCore.Qt.Checked": "QtCore.Qt.CheckState.Checked",
+        "QtCore.Qt.AlignRight": "QtCore.Qt.AlignmentFlag.AlignRight",
+        "QtCore.Qt.AlignVCenter": "QtCore.Qt.AlignmentFlag.AlignVCenter",
+        "QtCore.Qt.CustomContextMenu": "QtCore.Qt.ContextMenuPolicy.CustomContextMenu",
+        "QtCore.Qt.ItemIsEnabled": "QtCore.Qt.ItemFlag.ItemIsEnabled",
+        "QtCore.Qt.ItemIsUserCheckable": "QtCore.Qt.ItemFlag.ItemIsUserCheckable",
+        "QtCore.Qt.NoItemFlags": "QtCore.Qt.ItemFlag.NoItemFlags",
+        "QtCore.Qt.PointingHandCursor": "QtCore.Qt.CursorShape.PointingHandCursor",
+        "QtCore.Qt.UserRole": "QtCore.Qt.ItemDataRole.UserRole",
+        "QtCore.Qt.WindowModal": "QtCore.Qt.WindowModality.WindowModal",
+        "QtWidgets.QAbstractItemView.ExtendedSelection": (
+            "QtWidgets.QAbstractItemView.SelectionMode.ExtendedSelection"
+        ),
+        "QtWidgets.QAbstractItemView.NoEditTriggers": (
+            "QtWidgets.QAbstractItemView.EditTrigger.NoEditTriggers"
+        ),
+        "QtWidgets.QAbstractItemView.SelectRows": (
+            "QtWidgets.QAbstractItemView.SelectionBehavior.SelectRows"
+        ),
+        "QtWidgets.QDialogButtonBox.Close": "QtWidgets.QDialogButtonBox.StandardButton.Close",
+        "QtWidgets.QHeaderView.ResizeToContents": "QtWidgets.QHeaderView.ResizeMode.ResizeToContents",
+        "QtWidgets.QHeaderView.Stretch": "QtWidgets.QHeaderView.ResizeMode.Stretch",
+    }
+    for old, new in replacements.items():
+        source = source.replace(old, new)
+
+    module = types.ModuleType("aurora_stalker_worker_embedded")
+    module.__file__ = str(source_path)
+    module.__dict__["__name__"] = module.__name__
+    sys.modules[module.__name__] = module
+    exec(compile(source, str(source_path), "exec"), module.__dict__)
+    _STALKER_STUDIO_MODULE = module
+    return module
+
+
+def _load_balkan_scanner_module() -> types.ModuleType:
+    global _BALKAN_SCANNER_MODULE
+    if _BALKAN_SCANNER_MODULE:
+        return _BALKAN_SCANNER_MODULE
+
+    source_path = _find_resource("vendor", "balkan_iptv", "scanner.py")
+    spec = importlib.util.spec_from_file_location("aurora_balkan_scanner_worker", source_path)
+    if not spec or not spec.loader:
+        raise ImportError(f"Ne mogu učitati Balkan scanner: {source_path}")
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    _BALKAN_SCANNER_MODULE = module
+    return module
+
+
+def _merge_balkan_stats(base: dict[str, int], extra: dict[str, int]) -> dict[str, int]:
+    for key, value in extra.items():
+        base[key] = base.get(key, 0) + int(value or 0)
+    return base
+
+
+def _balkan_stats_summary(stats: dict[str, int]) -> str:
+    parts = [f"{key}:{value}" for key, value in stats.items() if value > 0]
+    return ", ".join(parts[:5])
 
 
 def _payload_list(payload: object, keys: tuple[str, ...] = ()) -> list:
@@ -312,6 +421,323 @@ class StalkerProfileCheckWorker(QThread):
                 )
                 self.progress.emit(index, len(self.profiles))
         self.finished_scan.emit()
+
+
+class StalkerBalkanMacWorker(QThread):
+    result = pyqtSignal(dict)
+    progress = pyqtSignal(int, int)
+    log = pyqtSignal(str)
+    finished_scan = pyqtSignal()
+
+    def __init__(
+        self,
+        profiles: list[tuple[str, str]],
+        sample_size: int = 4,
+        timeout: int = 10,
+        category_limit: int = 8,
+    ):
+        super().__init__()
+        self.profiles = profiles
+        self.sample_size = min(8, max(1, int(sample_size)))
+        self.timeout = min(30, max(3, int(timeout)))
+        self.category_limit = min(16, max(2, int(category_limit)))
+        self.running = True
+        self._random = random.SystemRandom()
+
+    def stop(self) -> None:
+        self.running = False
+
+    def run(self) -> None:
+        total = len(self.profiles)
+        for index, (portal, mac) in enumerate(self.profiles, 1):
+            if not self.running:
+                break
+            self.result.emit(self._check_profile(portal, mac))
+            self.progress.emit(index, total)
+        self.finished_scan.emit()
+
+    def _check_profile(self, portal: str, mac: str) -> dict[str, str]:
+        started = time.monotonic()
+        portal = normalize_url(portal)
+        mac = normalize_mac(mac)
+        result = {
+            "portal": portal,
+            "mac": mac,
+            "balkan": "NE",
+            "works": "NE",
+            "tested": "0/0",
+            "status": "Greška",
+            "samples": "—",
+            "ping": "—",
+        }
+        client = None
+        try:
+            stalker_module = _load_stalker_studio_module()
+            scanner_module = _load_balkan_scanner_module()
+            scanner = scanner_module.IPTVScanner(timeout=self.timeout)
+
+            self.log.emit(f"Provjeravam Balkan kanale za {portal} / {mac}")
+            if hasattr(stalker_module, "PORTAL_CONNECT_TIMEOUT"):
+                stalker_module.PORTAL_CONNECT_TIMEOUT = self.timeout
+            client = stalker_module.build_auto_client(portal, mac, adult_pin="0000")
+            if hasattr(client, "timeout"):
+                client.timeout = self.timeout
+
+            categories = client.get_categories("IPTV")
+            if not categories:
+                result["status"] = "Nema Live grupa ili portal ne vraća popis."
+                return result
+
+            candidates, balkan_stats, checked_categories = self._collect_balkan_candidates(
+                client,
+                scanner,
+                categories,
+            )
+            stats_text = _balkan_stats_summary(balkan_stats)
+            if not candidates:
+                result["status"] = (
+                    f"Nema Balkan kanala u {len(categories)} Live grupa."
+                    if not stats_text
+                    else f"Balkan signal ({stats_text}), ali nema programa za test."
+                )
+                return result
+
+            result["balkan"] = "DA"
+            tested_samples = self._choose_samples(candidates)
+            sample_results = []
+            working_count = 0
+            for sample in tested_samples:
+                if not self.running:
+                    break
+                item = sample["item"]
+                try:
+                    play_url = client.resolve_play_url(item)
+                    play_url = self._clean_stream_url(stalker_module, play_url)
+                except Exception as error:
+                    sample_results.append(f"{item.name}: link {self._short_error(error)}")
+                    continue
+                if not play_url:
+                    sample_results.append(f"{item.name}: bez linka")
+                    continue
+                works, status = self._probe_stream(client, play_url)
+                if works:
+                    working_count += 1
+                sample_results.append(f"{item.name}: {'DA' if works else 'NE'} ({status})")
+
+            tested_count = len(sample_results)
+            result["works"] = "DA" if working_count else "NE"
+            result["tested"] = f"{working_count}/{tested_count}"
+            result["samples"] = "; ".join(sample_results[:6]) or "—"
+            result["status"] = self._status_text(
+                working_count,
+                tested_count,
+                len(candidates),
+                checked_categories,
+                stats_text,
+            )
+        except Exception as error:
+            result["status"] = self._short_error(error)
+        finally:
+            result["ping"] = f"{int((time.monotonic() - started) * 1000)} ms"
+            if client:
+                try:
+                    client.close()
+                except Exception:
+                    pass
+        return result
+
+    def _collect_balkan_candidates(
+        self,
+        client: Any,
+        scanner: Any,
+        categories: list[Any],
+    ) -> tuple[list[dict[str, Any]], dict[str, int], int]:
+        ranked_categories = []
+        balkan_stats = {key: 0 for key in scanner.balkan_signals.keys()}
+        for category in categories:
+            stats = scanner.score_text_for_balkan(category.name, source="category")
+            score = sum(int(value or 0) for value in stats.values())
+            ranked_categories.append((score, category, stats))
+            if score:
+                _merge_balkan_stats(balkan_stats, stats)
+        ranked_categories.sort(key=lambda item: item[0], reverse=True)
+
+        category_pool = [item for item in ranked_categories if item[0] > 0][: self.category_limit]
+        if not category_pool:
+            category_pool = ranked_categories[: self.category_limit]
+
+        candidates: list[dict[str, Any]] = []
+        seen: set[tuple[str, str]] = set()
+        checked_categories = 0
+        target_pool_size = max(self.sample_size * 8, 24)
+        for category_score, category, category_stats in category_pool:
+            if not self.running:
+                break
+            checked_categories += 1
+            try:
+                items = client.get_items(category, num_threads=2)
+            except Exception as error:
+                self.log.emit(f"Preskačem grupu {category.name}: {self._short_error(error)}")
+                continue
+
+            category_candidates = []
+            for item in items:
+                combined_text = f"{category.name} {item.name}"
+                stream_stats = scanner.score_text_for_balkan(combined_text, source="stream")
+                stream_score = sum(int(value or 0) for value in stream_stats.values())
+                score = category_score + stream_score
+                if score <= 0:
+                    continue
+                stats = dict(category_stats)
+                _merge_balkan_stats(stats, stream_stats)
+                key = (item.name.strip().lower(), (item.url or "").strip().lower())
+                if key in seen:
+                    continue
+                seen.add(key)
+                _merge_balkan_stats(balkan_stats, stats)
+                category_candidates.append(
+                    {
+                        "category": category,
+                        "item": item,
+                        "score": score,
+                        "stats": stats,
+                    }
+                )
+
+            if not category_candidates and category_score > 0:
+                fallback_items = list(items)
+                self._random.shuffle(fallback_items)
+                for item in fallback_items[:target_pool_size]:
+                    key = (item.name.strip().lower(), (item.url or "").strip().lower())
+                    if key in seen:
+                        continue
+                    seen.add(key)
+                    category_candidates.append(
+                        {
+                            "category": category,
+                            "item": item,
+                            "score": category_score,
+                            "stats": dict(category_stats),
+                        }
+                    )
+
+            candidates.extend(category_candidates)
+            if len(candidates) >= target_pool_size and category_score > 0:
+                break
+
+        candidates.sort(key=lambda item: int(item["score"]), reverse=True)
+        return candidates, balkan_stats, checked_categories
+
+    def _choose_samples(self, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if len(candidates) <= self.sample_size:
+            return list(candidates)
+        strong_pool = candidates[: max(self.sample_size * 6, self.sample_size)]
+        return self._random.sample(strong_pool, self.sample_size)
+
+    def _clean_stream_url(self, stalker_module: types.ModuleType, play_url: str) -> str:
+        url = (play_url or "").strip()
+        if not url:
+            return ""
+        try:
+            extracted = stalker_module.extract_http_from_text(url)
+            if extracted:
+                return extracted
+        except Exception:
+            pass
+        try:
+            url = stalker_module.normalize_cmd_or_url(url)
+        except Exception:
+            pass
+        if not re.match(r"^https?://", url, flags=re.IGNORECASE):
+            match = re.search(r"https?://\S+", url)
+            url = match.group(0) if match else ""
+        return url.strip()
+
+    def _probe_stream(self, client: Any, play_url: str) -> tuple[bool, str]:
+        headers = dict(getattr(client, "headers", {}) or {})
+        headers.update(
+            {
+                "User-Agent": "VLC/3.0.20 LibVLC/3.0.20",
+                "Accept": "*/*",
+                "Connection": "close",
+            }
+        )
+        response = None
+        try:
+            response = client.session.get(
+                play_url,
+                headers=headers,
+                timeout=(min(5, self.timeout), self.timeout),
+                stream=True,
+                allow_redirects=True,
+            )
+            status = f"HTTP {response.status_code}"
+            if response.status_code not in {200, 206}:
+                return False, status
+
+            content_type = response.headers.get("content-type", "").lower()
+            chunk = b""
+            for part in response.iter_content(chunk_size=4096):
+                if part:
+                    chunk = part
+                    break
+
+            preview = chunk[:256].lstrip().lower()
+            if preview.startswith(b"#extm3u"):
+                return True, f"{status} HLS"
+            if preview.startswith(b"<html") or preview.startswith(b"{") or preview.startswith(b"["):
+                return False, f"{status} nije stream"
+            if b"not found" in preview[:160] or b"forbidden" in preview[:160]:
+                return False, f"{status} odbijeno"
+            if "html" in content_type or "json" in content_type:
+                return False, f"{status} {content_type or 'tekst'}"
+            if chunk:
+                return True, status
+            if any(marker in content_type for marker in ("video", "audio", "mpegurl", "octet-stream")):
+                return True, status
+            return False, f"{status} prazan odgovor"
+        except Exception as error:
+            return False, self._short_error(error)
+        finally:
+            if response is not None:
+                try:
+                    response.close()
+                except Exception:
+                    pass
+
+    def _status_text(
+        self,
+        working_count: int,
+        tested_count: int,
+        candidate_count: int,
+        checked_categories: int,
+        stats_text: str,
+    ) -> str:
+        prefix = (
+            f"Balkan signal: {stats_text}. "
+            if stats_text
+            else "Balkan signal pronađen po nazivima. "
+        )
+        if tested_count == 0:
+            return prefix + f"Kandidata {candidate_count}, ali nije testiran nijedan stream."
+        if working_count:
+            return (
+                prefix
+                + f"Radi {working_count}/{tested_count}; kandidata {candidate_count}; "
+                + f"grupa provjereno {checked_categories}."
+            )
+        return (
+            prefix
+            + f"Balkan postoji, ali 0/{tested_count} testiranih streamova radi; "
+            + f"kandidata {candidate_count}; grupa provjereno {checked_categories}."
+        )
+
+    def _short_error(self, error: Exception) -> str:
+        name = error.__class__.__name__.replace("Exception", "") or "Greška"
+        message = str(error).strip()
+        if len(message) > 120:
+            message = message[:117] + "..."
+        return f"{name}: {message}" if message else name
 
 
 class PlaylistWorker(QThread):
