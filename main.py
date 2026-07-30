@@ -96,7 +96,7 @@ def resource_dir() -> Path:
 
 RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
-DEFAULT_APP_VERSION = "v1.1.6"
+DEFAULT_APP_VERSION = "v1.1.7"
 
 
 def app_version() -> str:
@@ -4196,6 +4196,12 @@ class AuroraWindow(QMainWindow):
         self.stalker_balkan_table.setColumnWidth(4, 95)
         self.stalker_balkan_table.setColumnWidth(5, 360)
         self.stalker_balkan_table.setColumnWidth(6, 520)
+        self.stalker_balkan_table.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.stalker_balkan_table.customContextMenuRequested.connect(
+            self.stalker_balkan_table_menu
+        )
         layout.addWidget(self.stalker_balkan_table, 1)
         return page
 
@@ -6004,6 +6010,27 @@ class AuroraWindow(QMainWindow):
             f"{self.translate_static_text('Uklonjeno odabranih Balkan MAC profila:')} {len(rows)}",
             5000,
         )
+
+    def stalker_balkan_table_menu(self, position) -> None:
+        row = self.stalker_balkan_table.rowAt(position.y())
+        if row < 0:
+            return
+        self.stalker_balkan_table.setCurrentCell(row, 0)
+        menu = QMenu(self)
+        send_studio = menu.addAction("Pošalji odabrano u Studio")
+        self.translate_menu(menu)
+        chosen = menu.exec(
+            self.stalker_balkan_table.viewport().mapToGlobal(position)
+        )
+        if chosen == send_studio:
+            self.open_stalker_balkan_row_in_studio(row)
+
+    def open_stalker_balkan_row_in_studio(self, row: int) -> None:
+        portal_item = self.stalker_balkan_table.item(row, 0)
+        mac_item = self.stalker_balkan_table.item(row, 1)
+        if not portal_item or not mac_item:
+            return
+        self.open_profile_in_stalker(portal_item.text(), mac_item.text())
 
     def export_stalker_balkan_results(self) -> None:
         if not self.stalker_balkan_table.rowCount():

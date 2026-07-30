@@ -28,6 +28,7 @@ parserima, dok su dva najjača napredna modula sačuvana u punom obliku.
   - adult PIN, auto threads i brojanje stavki
   - brzi i normalni M3U export
   - resolve stream linkova i provjera nakon exporta
+  - slanje odabranog profila iz Balkan MAC testa u Studio desnim klikom
 - ugrađeni Balkan IPTV tab u istom Aurora prozoru:
   - napredni Xtream/MAC skener i Ex-YU/Balkan detekcija
   - export TXT i M3U po regiji
