@@ -19,7 +19,7 @@ from pathlib import Path
 from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
-from PyQt6.QtCore import QSettings, QThread, QTimer, Qt, pyqtSignal
+from PyQt6.QtCore import QPoint, QRect, QSize, QSettings, QThread, QTimer, Qt, pyqtSignal
 from PyQt6.QtGui import QAction, QColor
 from PyQt6.QtWidgets import (
     QApplication,
@@ -36,6 +36,8 @@ from PyQt6.QtWidgets import (
     QHeaderView,
     QInputDialog,
     QLabel,
+    QLayout,
+    QLayoutItem,
     QLineEdit,
     QListWidget,
     QListWidgetItem,
@@ -96,7 +98,7 @@ def resource_dir() -> Path:
 
 RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
-DEFAULT_APP_VERSION = "v1.1.8"
+DEFAULT_APP_VERSION = "v1.1.9"
 
 
 def app_version() -> str:
@@ -990,6 +992,94 @@ QSplitter::handle:hover { background: #2a3656; }
 """
 
 
+class FlowLayout(QLayout):
+    """Responsive toolbar layout that moves actions onto additional rows."""
+
+    def __init__(self, parent=None, spacing: int = 8):
+        super().__init__(parent)
+        self._items: list[QLayoutItem] = []
+        self._spacing = spacing
+        self.setContentsMargins(0, 0, 0, 0)
+
+    def addItem(self, item: QLayoutItem) -> None:
+        self._items.append(item)
+
+    def addStretch(self, _stretch: int = 0) -> None:
+        # Flow rows use the remaining horizontal space naturally.
+        return
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int) -> QLayoutItem | None:
+        return self._items[index] if 0 <= index < len(self._items) else None
+
+    def takeAt(self, index: int) -> QLayoutItem | None:
+        return self._items.pop(index) if 0 <= index < len(self._items) else None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        return self._do_layout(QRect(0, 0, width, 0), test_only=True)
+
+    def setGeometry(self, rect: QRect) -> None:
+        super().setGeometry(rect)
+        self._do_layout(rect, test_only=False)
+
+    def sizeHint(self) -> QSize:
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        margins = self.contentsMargins()
+        size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+        return size
+
+    def _do_layout(self, rect: QRect, test_only: bool) -> int:
+        margins = self.contentsMargins()
+        effective = rect.adjusted(
+            margins.left(),
+            margins.top(),
+            -margins.right(),
+            -margins.bottom(),
+        )
+        x = effective.x()
+        y = effective.y()
+        row_height = 0
+        right = effective.right()
+
+        for item in self._items:
+            hint = item.sizeHint().expandedTo(item.minimumSize())
+            next_x = x + hint.width()
+            if x > effective.x() and next_x > right:
+                x = effective.x()
+                y += row_height + self._spacing
+                next_x = x + hint.width()
+                row_height = 0
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+            x = next_x + self._spacing
+            row_height = max(row_height, hint.height())
+        return y + row_height - rect.y() + margins.bottom()
+
+
+def fit_button_text(widget: QPushButton) -> None:
+    """Keep the full caption visible instead of allowing layouts to clip it."""
+
+    text_width = widget.fontMetrics().horizontalAdvance(widget.text().replace("&", ""))
+    widget.setMinimumWidth(max(104, text_width + 34))
+    widget.setMaximumWidth(16777215)
+    widget.setSizePolicy(QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Fixed)
+    if widget.text() and not widget.toolTip():
+        widget.setToolTip(widget.text())
+
+
 def button(
     text: str,
     primary: bool = False,
@@ -998,8 +1088,7 @@ def button(
 ) -> QPushButton:
     widget = QPushButton(text)
     widget.setMinimumHeight(40)
-    widget.setMinimumWidth(104)
-    widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+    fit_button_text(widget)
     if tooltip:
         widget.setToolTip(tooltip)
     elif len(text) > 18:
@@ -1046,8 +1135,8 @@ def tool_description(text: str) -> QLabel:
 
 def restyle_long_button(widget: QPushButton, minimum_width: int = 150) -> None:
     widget.setMinimumHeight(36)
-    widget.setMinimumWidth(min(minimum_width, 150))
-    widget.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+    widget.setMinimumWidth(max(minimum_width, widget.minimumWidth()))
+    fit_button_text(widget)
 
 
 def patch_fusion_balkan_detection(fusion_module) -> None:
@@ -2178,6 +2267,16 @@ class AuroraWindow(QMainWindow):
             original = self.original_property(action, "aurora_original_text", action.text())
             action.setText(self.translate_static_text(original))
 
+        self.polish_responsive_controls()
+
+    def polish_responsive_controls(self, root: QWidget | None = None) -> None:
+        root_widget = root or self
+        for button_widget in root_widget.findChildren(QPushButton):
+            fit_button_text(button_widget)
+        for tabs in root_widget.findChildren(QTabWidget):
+            tabs.tabBar().setElideMode(Qt.TextElideMode.ElideNone)
+            tabs.tabBar().setUsesScrollButtons(True)
+
     def apply_theme(self) -> None:
         QApplication.instance().setStyleSheet(LIGHT_STYLE if self.theme == "light" else STYLE)
 
@@ -2214,7 +2313,7 @@ class AuroraWindow(QMainWindow):
                         "<b>Profili:</b> učitaj ili zalijepi portal + MAC profile i otvori odabrani profil u Stalker Studiju.",
                         "<b>URL -> MAC grupiranje:</b> iz neurednog teksta složi portale i pripadajuće MAC adrese.",
                         "<b>Provjera portala:</b> provjerava rade li portal + MAC parovi i prikazuje status/ping.",
-                        "<b>Studio · Live / VOD / Series:</b> učitava sadržaj iz Stalker/MAG portala i radi M3U export.",
+                        "<b>Studio · Live / VOD / Series:</b> učitava sadržaj iz Stalker/MAG portala, radi M3U export i dvoklikom odmah pokreće program u VLC-u.",
                     ],
                 ),
                 (
@@ -2247,7 +2346,7 @@ class AuroraWindow(QMainWindow):
                         "<b>Profiles:</b> load or paste portal + MAC profiles and open the selected profile in Stalker Studio.",
                         "<b>URL -> MAC grouping:</b> turns messy text into portals with matching MAC addresses.",
                         "<b>Portal check:</b> checks whether portal + MAC pairs work and shows status/ping.",
-                        "<b>Studio · Live / VOD / Series:</b> loads content from Stalker/MAG portals and creates M3U exports.",
+                        "<b>Studio · Live / VOD / Series:</b> loads content from Stalker/MAG portals, creates M3U exports and opens a program directly in VLC on double-click.",
                     ],
                 ),
                 (
@@ -2287,7 +2386,8 @@ class AuroraWindow(QMainWindow):
         root.setContentsMargins(22, 18, 22, 18)
         root.setSpacing(14)
 
-        title_row = QHBoxLayout()
+        title_row = QVBoxLayout()
+        title_row.setSpacing(10)
         brand = QVBoxLayout()
         title = QLabel("Aurora IPTV")
         title.setObjectName("Title")
@@ -2296,12 +2396,10 @@ class AuroraWindow(QMainWindow):
         brand.addWidget(title)
         brand.addWidget(self.subtitle_label)
         title_row.addLayout(brand)
-        title_row.addStretch()
 
         header_controls = QVBoxLayout()
         header_controls.setSpacing(6)
-        header_actions = QHBoxLayout()
-        header_actions.setSpacing(8)
+        header_actions = FlowLayout(spacing=8)
         self.setting_check_updates_startup = QCheckBox(
             "Automatski provjeri update pri pokretanju"
         )
@@ -2971,7 +3069,7 @@ class AuroraWindow(QMainWindow):
         for index, card in enumerate(
             [self.metric_urls, self.metric_online, self.metric_macs, self.metric_vault]
         ):
-            cards.addWidget(card, 0, index)
+            cards.addWidget(card, index // 2, index % 2)
         layout.addLayout(cards)
 
         quick = QFrame()
@@ -3127,6 +3225,7 @@ class AuroraWindow(QMainWindow):
                 button_widget.setText(self.clean_balkan_text(button_text))
             if button_widget.styleSheet():
                 button_widget.setStyleSheet("")
+            fit_button_text(button_widget)
         for table_widget in root_widget.findChildren(QTableWidget):
             table_widget.setAlternatingRowColors(True)
             for column in range(table_widget.columnCount()):
@@ -3223,7 +3322,7 @@ class AuroraWindow(QMainWindow):
                 "pomaže brzo pronaći servere."
             )
         )
-        controls = QHBoxLayout()
+        controls = FlowLayout()
         self.url_only_playlists = QCheckBox("Samo IPTV/M3U")
         self.url_only_playlists.setChecked(True)
         self.url_m3u8 = QCheckBox("Uključi M3U8")
@@ -3302,7 +3401,7 @@ class AuroraWindow(QMainWindow):
         splitter.addWidget(self.url_output)
         splitter.setSizes([650, 650])
         layout.addWidget(splitter, 1)
-        footer = QHBoxLayout()
+        footer = FlowLayout()
         self.url_stats = QLabel("URL-ovi: 0 · Duplikati: 0 · Serveri: 0")
         self.url_stats.setObjectName("Subtitle")
         footer.addWidget(self.url_stats)
@@ -3343,7 +3442,7 @@ class AuroraWindow(QMainWindow):
                 "pregledali, kopirali ili poslali u Stalker Studio."
             )
         )
-        controls = QHBoxLayout()
+        controls = FlowLayout()
         self.mac_global = QCheckBox("Globalno ukloni duplikate")
         self.mac_sort_urls = QCheckBox("Sortiraj URL-ove")
         self.mac_sort_values = QCheckBox("Sortiraj MAC adrese")
@@ -3384,7 +3483,7 @@ class AuroraWindow(QMainWindow):
         self.mac_group_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.mac_group_table.customContextMenuRequested.connect(self.mac_group_table_menu)
         layout.addWidget(self.mac_group_table, 1)
-        footer = QHBoxLayout()
+        footer = FlowLayout()
         self.mac_group_stats = QLabel("Grupe: 0 · MAC: 0")
         self.mac_group_stats.setObjectName("Subtitle")
         footer.addWidget(self.mac_group_stats)
@@ -3439,7 +3538,7 @@ class AuroraWindow(QMainWindow):
                 "broj veza, sadržaj i ping."
             )
         )
-        top = QHBoxLayout()
+        top = FlowLayout()
         self.scan_threads = QSpinBox()
         self.scan_threads.setRange(1, 30)
         self.scan_threads.setValue(8)
@@ -3493,8 +3592,8 @@ class AuroraWindow(QMainWindow):
         hint_row.addWidget(hint)
         hint_row.addStretch()
         actions.addLayout(hint_row)
-        export_row = QHBoxLayout()
-        cleanup_row = QHBoxLayout()
+        export_row = FlowLayout()
+        cleanup_row = FlowLayout()
         export_txt = button("Export TXT")
         export_txt.clicked.connect(lambda: self.export_scan_results("txt"))
         export_csv = button("Export CSV")
@@ -3576,7 +3675,7 @@ class AuroraWindow(QMainWindow):
         self.mac_check_input.setMaximumHeight(115)
         self.mac_check_input.setPlaceholderText("MAC adrese, jedna po retku...")
         layout.addWidget(self.mac_check_input)
-        controls = QHBoxLayout()
+        controls = FlowLayout()
         note = QLabel("Namijenjeno isključivo endpointima za koje imaš ovlaštenje.")
         note.setObjectName("Subtitle")
         controls.addWidget(note)
@@ -3595,7 +3694,7 @@ class AuroraWindow(QMainWindow):
         layout.addWidget(self.mac_progress)
         self.mac_table = table(["MAC adresa", "Radi", "Status", "Vrijeme"])
         layout.addWidget(self.mac_table, 1)
-        bottom = QHBoxLayout()
+        bottom = FlowLayout()
         bottom.addStretch()
         export_btn = button("Export rezultata CSV")
         export_btn.clicked.connect(self.export_mac_results)
@@ -3630,11 +3729,9 @@ class AuroraWindow(QMainWindow):
         self.gen_server.setPlaceholderText("http://server:port")
         self.gen_user = QLineEdit()
         self.gen_user.setMinimumWidth(150)
-        self.gen_user.setMaximumWidth(235)
         self.gen_password = QLineEdit()
         self.gen_password.setEchoMode(QLineEdit.EchoMode.Password)
         self.gen_password.setMinimumWidth(150)
-        self.gen_password.setMaximumWidth(235)
         self.gen_full_url = QLineEdit()
         self.gen_full_url.setPlaceholderText(
             "Zalijepi cijeli get.php link s username i password parametrima..."
@@ -3658,36 +3755,30 @@ class AuroraWindow(QMainWindow):
             tooltip="Učitaj Live, VOD i Serije redom iz istog Xtream računa.",
         )
         self.gen_load_all.clicked.connect(self.load_all_playlist_types)
-        for compact_widget in (
-            parse_url_btn,
-            load_m3u_btn,
-            clear_generator_btn,
-            self.gen_load,
-            self.gen_load_all,
-        ):
-            compact_widget.setMinimumWidth(96)
-            compact_widget.setMaximumWidth(132)
-
-        account_row = QHBoxLayout()
+        account_row = QGridLayout()
         account_row.setSpacing(6)
-        account_row.addWidget(QLabel("Server"))
-        account_row.addWidget(self.gen_server, 1)
-        account_row.addWidget(QLabel("Korisnik"))
-        account_row.addWidget(self.gen_user)
-        account_row.addWidget(QLabel("Lozinka"))
-        account_row.addWidget(self.gen_password)
+        account_row.addWidget(QLabel("Server"), 0, 0)
+        account_row.addWidget(self.gen_server, 0, 1, 1, 3)
+        account_row.addWidget(QLabel("Korisnik"), 1, 0)
+        account_row.addWidget(self.gen_user, 1, 1)
+        account_row.addWidget(QLabel("Lozinka"), 1, 2)
+        account_row.addWidget(self.gen_password, 1, 3)
+        account_row.setColumnStretch(1, 1)
+        account_row.setColumnStretch(3, 1)
         form.addLayout(account_row)
 
-        link_row = QHBoxLayout()
-        link_row.setSpacing(6)
-        link_row.addWidget(QLabel("Cijeli link"))
-        link_row.addWidget(self.gen_full_url, 1)
-        link_row.addWidget(self.gen_load)
-        link_row.addWidget(self.gen_load_all)
-        link_row.addWidget(parse_url_btn)
-        link_row.addWidget(load_m3u_btn)
-        link_row.addWidget(clear_generator_btn)
-        form.addLayout(link_row)
+        link_input_row = QHBoxLayout()
+        link_input_row.setSpacing(6)
+        link_input_row.addWidget(QLabel("Cijeli link"))
+        link_input_row.addWidget(self.gen_full_url, 1)
+        form.addLayout(link_input_row)
+        link_actions = FlowLayout()
+        link_actions.addWidget(self.gen_load)
+        link_actions.addWidget(self.gen_load_all)
+        link_actions.addWidget(parse_url_btn)
+        link_actions.addWidget(load_m3u_btn)
+        link_actions.addWidget(clear_generator_btn)
+        form.addLayout(link_actions)
         layout.addWidget(credentials)
         filter_row = QHBoxLayout()
         self.gen_filter = QLineEdit()
@@ -3695,7 +3786,7 @@ class AuroraWindow(QMainWindow):
         self.gen_filter.textChanged.connect(self.filter_playlist)
         filter_row.addWidget(self.gen_filter, 1)
         layout.addLayout(filter_row)
-        export_actions = QHBoxLayout()
+        export_actions = FlowLayout()
         export_btn = button(
             "Export M3U",
             primary=True,
@@ -3727,16 +3818,6 @@ class AuroraWindow(QMainWindow):
             tooltip="Prikaži pregled M3U zapisa za trenutno prikazane stavke.",
         )
         preview_btn.clicked.connect(self.preview_playlist)
-        for action_button in (
-            export_btn,
-            export_selected_btn,
-            save_visible_btn,
-            save_selected_btn,
-            save_all_btn,
-            preview_btn,
-        ):
-            action_button.setMinimumWidth(96)
-            action_button.setMaximumWidth(150)
         export_actions.addWidget(export_btn)
         export_actions.addWidget(export_selected_btn)
         export_actions.addWidget(save_visible_btn)
@@ -3756,7 +3837,7 @@ class AuroraWindow(QMainWindow):
             table_panel = QWidget()
             table_layout = QVBoxLayout(table_panel)
             table_layout.setContentsMargins(0, 0, 0, 0)
-            table_controls = QHBoxLayout()
+            table_controls = FlowLayout(spacing=6)
             table_controls.setSpacing(6)
             table_label = QLabel("Stream URL")
             table_label.setObjectName("Subtitle")
@@ -3766,9 +3847,6 @@ class AuroraWindow(QMainWindow):
             uncheck_visible_btn = button("Odznači sve")
             uncheck_visible_btn.setToolTip("Odznači sve trenutno prikazane programe u tablici.")
             uncheck_visible_btn.clicked.connect(lambda _checked=False, kind=content_type: self.set_visible_generator_checks(False, kind))
-            for table_button in (check_visible_btn, uncheck_visible_btn):
-                table_button.setMinimumWidth(96)
-                table_button.setMaximumWidth(132)
             table_controls.addWidget(table_label)
             table_controls.addStretch()
             table_controls.addWidget(check_visible_btn)
@@ -3778,6 +3856,9 @@ class AuroraWindow(QMainWindow):
             content_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
             content_table.customContextMenuRequested.connect(
                 lambda position, kind=content_type: self.generator_table_menu(kind, position)
+            )
+            content_table.itemDoubleClicked.connect(
+                lambda item, kind=content_type: self.play_generator_item_in_vlc(kind, item)
             )
             content_table.itemChanged.connect(
                 lambda item, kind=content_type: self.generator_item_changed(kind, item)
@@ -3791,14 +3872,11 @@ class AuroraWindow(QMainWindow):
             group_layout.setContentsMargins(10, 10, 10, 10)
             group_title = QLabel("Grupe")
             group_title.setStyleSheet("font-weight: 800;")
-            group_controls = QHBoxLayout()
+            group_controls = FlowLayout(spacing=6)
             check_groups_btn = button("Označi sve grupe")
             check_groups_btn.clicked.connect(lambda _checked=False, kind=content_type: self.set_generator_group_checks(True, kind))
             uncheck_groups_btn = button("Odznači sve grupe")
             uncheck_groups_btn.clicked.connect(lambda _checked=False, kind=content_type: self.set_generator_group_checks(False, kind))
-            for group_button in (check_groups_btn, uncheck_groups_btn):
-                group_button.setMinimumWidth(150)
-                group_button.setMaximumWidth(170)
             group_controls.addWidget(check_groups_btn)
             group_controls.addWidget(uncheck_groups_btn)
             group_list = QListWidget()
@@ -3868,7 +3946,7 @@ class AuroraWindow(QMainWindow):
         card_layout.addWidget(description)
         profiles_layout.addWidget(card)
 
-        controls = QHBoxLayout()
+        controls = FlowLayout()
         load_btn = button("Učitaj TXT listu URL/MAC profila")
         load_btn.clicked.connect(self.load_stalker_profiles)
         add_btn = button("Dodaj TXT profile")
@@ -3901,8 +3979,10 @@ class AuroraWindow(QMainWindow):
             tooltip="Spremi sve prikazane Stalker portal/MAC profile u bazu.",
         )
         save_archive_btn.clicked.connect(self.save_stalker_profiles_to_vault)
-        profiles_layout.addWidget(save_archive_btn, alignment=Qt.AlignmentFlag.AlignRight)
-        profiles_layout.addWidget(export_btn, alignment=Qt.AlignmentFlag.AlignRight)
+        profile_file_actions = FlowLayout()
+        profile_file_actions.addWidget(save_archive_btn)
+        profile_file_actions.addWidget(export_btn)
+        profiles_layout.addLayout(profile_file_actions)
         self.stalker_tabs.addTab(profiles_page, "Profili")
         self.stalker_tabs.addTab(self._mac_grouper(), "URL → MAC grupiranje")
         self.stalker_tabs.addTab(self._stalker_check_tab(), "Provjera portala")
@@ -4126,7 +4206,7 @@ class AuroraWindow(QMainWindow):
                 "Provjerava odgovara li Stalker/MAG portal za URL i pripadajuću MAC adresu."
             )
         )
-        controls = QHBoxLayout()
+        controls = FlowLayout()
         load_profiles = button("Učitaj iz profila")
         load_profiles.clicked.connect(self.load_stalker_check_from_profiles)
         paste_profiles = button("Zalijepi i prepoznaj")
@@ -4158,6 +4238,15 @@ class AuroraWindow(QMainWindow):
         self.stalker_check_progress = QProgressBar()
         layout.addWidget(self.stalker_check_progress)
         self.stalker_check_table = table(["Portal URL", "MAC adresa", "Radi", "Status", "Vrijeme"])
+        self.stalker_check_table.setContextMenuPolicy(
+            Qt.ContextMenuPolicy.CustomContextMenu
+        )
+        self.stalker_check_table.customContextMenuRequested.connect(
+            self.stalker_check_table_menu
+        )
+        self.stalker_check_table.itemDoubleClicked.connect(
+            lambda _item: self.open_selected_stalker_check_in_studio()
+        )
         layout.addWidget(self.stalker_check_table, 1)
         return page
 
@@ -4171,7 +4260,7 @@ class AuroraWindow(QMainWindow):
             )
         )
 
-        controls = QHBoxLayout()
+        controls = FlowLayout()
         load_valid = button(
             "Učitaj ispravne iz Provjere portala",
             tooltip="Prebaci samo redove gdje je Provjera portala označila Radi = DA.",
@@ -4277,8 +4366,8 @@ class AuroraWindow(QMainWindow):
         accounts_layout = QVBoxLayout(accounts_page)
         controls = QVBoxLayout()
         controls_header = QHBoxLayout()
-        account_actions = QHBoxLayout()
-        account_file_actions = QHBoxLayout()
+        account_actions = FlowLayout()
+        account_file_actions = FlowLayout()
         info = QLabel("Aktivni računi spremljeni bez duplikata")
         info.setObjectName("Subtitle")
         controls_header.addWidget(info)
@@ -4338,13 +4427,17 @@ class AuroraWindow(QMainWindow):
         self.vault_table = table(
             ["ID", "Status", "Server", "Korisnik", "Lozinka", "Ističe", "Veze", "Sadržaj", "Provjereno"]
         )
+        self.vault_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.vault_table.customContextMenuRequested.connect(self.vault_account_menu)
         accounts_layout.addWidget(self.vault_table)
         xtream_lists_label = QLabel("Xtream liste spremljene iz Generatora i provjere")
         xtream_lists_label.setObjectName("Subtitle")
         accounts_layout.addWidget(xtream_lists_label)
         self.xtream_saved_lists_table = table(["ID", "Naziv", "Tip", "Izvor", "Stavki", "Spremljeno"])
         self.xtream_saved_lists_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.xtream_saved_lists_table.customContextMenuRequested.connect(self.xtream_saved_list_menu)
+        self.xtream_saved_lists_table.customContextMenuRequested.connect(
+            lambda position: self.saved_list_menu(self.xtream_saved_lists_table, position)
+        )
         accounts_layout.addWidget(self.xtream_saved_lists_table)
         archive_tabs.addTab(accounts_page, "Xtream")
 
@@ -4352,7 +4445,7 @@ class AuroraWindow(QMainWindow):
         lists_layout = QVBoxLayout(lists_page)
         list_controls = QVBoxLayout()
         list_header = QHBoxLayout()
-        list_actions = QHBoxLayout()
+        list_actions = FlowLayout()
         list_info = QLabel("MAC i Stalker liste/profili")
         list_info.setObjectName("Subtitle")
         list_header.addWidget(list_info)
@@ -4402,6 +4495,10 @@ class AuroraWindow(QMainWindow):
         list_controls.addLayout(list_actions)
         lists_layout.addLayout(list_controls)
         self.saved_lists_table = table(["ID", "Naziv", "Tip", "Izvor", "Stavki", "Spremljeno"])
+        self.saved_lists_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.saved_lists_table.customContextMenuRequested.connect(
+            lambda position: self.saved_list_menu(self.saved_lists_table, position)
+        )
         lists_layout.addWidget(self.saved_lists_table)
         archive_tabs.addTab(lists_page, "MAC")
 
@@ -4992,6 +5089,23 @@ class AuroraWindow(QMainWindow):
             )
         elif chosen == play_vlc:
             self.play_stream_in_vlc(stream["url"])
+
+    def play_generator_item_in_vlc(
+        self,
+        content_type: str,
+        item: QTableWidgetItem,
+    ) -> None:
+        stream = item.data(Qt.ItemDataRole.UserRole)
+        if not isinstance(stream, dict):
+            return
+        stream_url = str(stream.get("url") or "").strip()
+        if not stream_url:
+            self.statusBar().showMessage(
+                f"{content_type}: odabrani zapis nema stream URL.",
+                4000,
+            )
+            return
+        self.play_stream_in_vlc(stream_url)
 
     def detect_vlc_path(self) -> str:
         configured = self.setting_player.text().strip() if hasattr(self, "setting_player") else ""
@@ -5809,6 +5923,35 @@ class AuroraWindow(QMainWindow):
         elif chosen == remove:
             self.stalker_table.removeRow(row)
 
+    def stalker_check_table_menu(self, position) -> None:
+        row = self.stalker_check_table.rowAt(position.y())
+        if row < 0:
+            return
+        self.stalker_check_table.setCurrentCell(row, 0)
+        portal = self.stalker_check_table.item(row, 0).text()
+        mac = self.stalker_check_table.item(row, 1).text()
+        menu = QMenu(self)
+        open_studio = menu.addAction("Otvori u Stalker Studiju")
+        copy_portal = menu.addAction("Kopiraj portal")
+        copy_mac = menu.addAction("Kopiraj MAC")
+        copy_both = menu.addAction("Kopiraj portal i MAC")
+        menu.addSeparator()
+        remove = menu.addAction("Ukloni profil")
+        self.translate_menu(menu)
+        chosen = menu.exec(
+            self.stalker_check_table.viewport().mapToGlobal(position)
+        )
+        if chosen == open_studio:
+            self.open_selected_stalker_check_in_studio()
+        elif chosen == copy_portal:
+            QApplication.clipboard().setText(portal)
+        elif chosen == copy_mac:
+            QApplication.clipboard().setText(mac)
+        elif chosen == copy_both:
+            QApplication.clipboard().setText(f"{portal}\n{mac}")
+        elif chosen == remove:
+            self.stalker_check_table.removeRow(row)
+
     def launch_selected_stalker(self) -> None:
         row = self.stalker_table.currentRow()
         if row < 0:
@@ -6179,6 +6322,33 @@ class AuroraWindow(QMainWindow):
             "expiry": self.vault_table.item(row, 5).text(),
         }
 
+    def vault_account_menu(self, position) -> None:
+        row = self.vault_table.rowAt(position.y())
+        if row < 0:
+            return
+        self.vault_table.setCurrentCell(row, 0)
+        menu = QMenu(self)
+        generator = menu.addAction("Povuci u Generator")
+        scan = menu.addAction("Pošalji u provjeru")
+        copy_login = menu.addAction("Kopiraj server / korisnik / lozinka")
+        menu.addSeparator()
+        delete = menu.addAction("Obriši označeno")
+        self.translate_menu(menu)
+        chosen = menu.exec(self.vault_table.viewport().mapToGlobal(position))
+        if chosen == generator:
+            self.load_vault_account_to_generator()
+        elif chosen == scan:
+            self.send_vault_account_to_scan()
+        elif chosen == copy_login:
+            QApplication.clipboard().setText(
+                "\n".join(
+                    self.vault_table.item(row, column).text()
+                    for column in (2, 3, 4)
+                )
+            )
+        elif chosen == delete:
+            self.delete_vault_row()
+
     def load_vault_account_to_generator(self) -> None:
         account = self.selected_vault_account()
         if not account:
@@ -6290,20 +6460,30 @@ class AuroraWindow(QMainWindow):
             return None
         return record
 
-    def xtream_saved_list_menu(self, position) -> None:
-        row = self.xtream_saved_lists_table.rowAt(position.y())
+    def saved_list_menu(self, table_widget: QTableWidget, position) -> None:
+        row = table_widget.rowAt(position.y())
         if row < 0:
             return
-        self.xtream_saved_lists_table.setCurrentCell(row, 0)
-        self._active_saved_lists_table = self.xtream_saved_lists_table
+        table_widget.setCurrentCell(row, 0)
+        self._active_saved_lists_table = table_widget
         menu = QMenu(self)
+        open_list = menu.addAction("Otvori listu")
         open_generator = menu.addAction("Vrati u Generator")
+        send_scan = menu.addAction("Pošalji u provjeru")
+        copy_list = menu.addAction("Kopiraj listu")
         export_list = menu.addAction("Export liste")
+        menu.addSeparator()
         delete_list = menu.addAction("Obriši listu")
         self.translate_menu(menu)
-        chosen = menu.exec(self.xtream_saved_lists_table.viewport().mapToGlobal(position))
-        if chosen == open_generator:
+        chosen = menu.exec(table_widget.viewport().mapToGlobal(position))
+        if chosen == open_list:
+            self.open_saved_list()
+        elif chosen == open_generator:
             self.open_saved_list_in_generator()
+        elif chosen == send_scan:
+            self.send_saved_list_to_scan()
+        elif chosen == copy_list:
+            self.copy_saved_list()
         elif chosen == export_list:
             self.export_saved_list()
         elif chosen == delete_list:

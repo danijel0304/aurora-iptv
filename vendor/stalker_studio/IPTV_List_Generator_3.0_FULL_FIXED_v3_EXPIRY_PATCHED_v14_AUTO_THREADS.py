@@ -1981,8 +1981,8 @@ class GroupContentsDialog(QtWidgets.QDialog):
         root.addLayout(top)
 
         hint = QtWidgets.QLabel(
-            "Dvoklik na kanal/film/epizodu generira link s tokenom i prikazuje "
-            "M3U zapis te sve dostupne metapodatke."
+            "Dvoklik na kanal, film ili epizodu generira tokenizirani link i odmah "
+            "pokreće sadržaj u VLC playeru. Dodatne opcije dostupne su desnim klikom."
         )
         hint.setWordWrap(True)
         hint.setStyleSheet("color: #a9b4c3;")
@@ -1998,6 +1998,7 @@ class GroupContentsDialog(QtWidgets.QDialog):
         self.listw = QtWidgets.QListWidget()
         self.listw.setSelectionMode(QtWidgets.QAbstractItemView.ExtendedSelection)
         self.listw.setAlternatingRowColors(True)
+        self.listw.setContextMenuPolicy(QtCore.Qt.CustomContextMenu)
         root.addWidget(self.listw, 1)
 
         btns = QtWidgets.QDialogButtonBox(QtWidgets.QDialogButtonBox.Close)
@@ -2013,6 +2014,7 @@ class GroupContentsDialog(QtWidgets.QDialog):
         self.btn_uncheck_all.clicked.connect(lambda: self._set_all_visible(False))
         self.btn_retry.clicked.connect(lambda: self.retry_requested.emit())
         self.listw.itemDoubleClicked.connect(self._generate_item_link)
+        self.listw.customContextMenuRequested.connect(self._item_context_menu)
 
     def set_loading(self, msg: str = "Učitavam..."):
         self.progress.setVisible(True)
@@ -2062,14 +2064,16 @@ class GroupContentsDialog(QtWidgets.QDialog):
             li.setFlags(li.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
             li.setCheckState(QtCore.Qt.Checked if selected else QtCore.Qt.Unchecked)
             li.setData(QtCore.Qt.UserRole, uid)
-            li.setToolTip("Dvoklik generira tokenizirani link i prikazuje sve podatke.")
+            li.setToolTip(
+                "Dvoklik generira tokenizirani link i odmah pokreće sadržaj u VLC-u."
+            )
 
             # URL (ako postoji) kao tooltip
             try:
                 u = it.url
                 if u:
                     li.setToolTip(
-                        "Dvoklik generira tokenizirani link i prikazuje sve podatke.\n\n"
+                        "Dvoklik generira tokenizirani link i odmah pokreće sadržaj u VLC-u.\n\n"
                         f"Izvorno: {u}"
                     )
             except Exception:
@@ -2118,7 +2122,11 @@ class GroupContentsDialog(QtWidgets.QDialog):
             return None
         return next((item for item in self._all_items if item_uid(item) == uid), None)
 
-    def _generate_item_link(self, li: QtWidgets.QListWidgetItem):
+    def _generate_item_link(
+        self,
+        li: QtWidgets.QListWidgetItem,
+        show_details: bool = False,
+    ):
         if self._resolving_link:
             return
         item = self._item_for_list_entry(li)
@@ -2145,11 +2153,50 @@ class GroupContentsDialog(QtWidgets.QDialog):
             self.progress.setRange(0, 100)
             self.progress.setVisible(False)
             if isinstance(payload, dict):
-                self._show_generated_link(payload)
+                if show_details:
+                    self._show_generated_link(payload)
+                else:
+                    generated_url = str(payload.get("url") or "").strip()
+                    if generated_url:
+                        self._play_generated_stream(generated_url)
+                    else:
+                        QtWidgets.QMessageBox.warning(
+                            self,
+                            "Pokretanje streama",
+                            "Portal nije vratio valjan stream URL.",
+                        )
 
         worker.signals.error.connect(failed)
         worker.signals.finished.connect(finished)
         self.thread_pool.start(worker)
+
+    def _item_context_menu(self, position):
+        li = self.listw.itemAt(position)
+        if not li:
+            return
+        menu = QtWidgets.QMenu(self)
+        play = menu.addAction("Pokreni u VLC playeru")
+        details = menu.addAction("Prikaži tokenizirani link i detalje")
+        copy_name = menu.addAction("Kopiraj naziv")
+        menu.addSeparator()
+        toggle = menu.addAction(
+            "Odznači program"
+            if li.checkState() == QtCore.Qt.Checked
+            else "Označi program"
+        )
+        chosen = menu.exec(self.listw.viewport().mapToGlobal(position))
+        if chosen == play:
+            self._generate_item_link(li)
+        elif chosen == details:
+            self._generate_item_link(li, show_details=True)
+        elif chosen == copy_name:
+            QtWidgets.QApplication.clipboard().setText(li.text())
+        elif chosen == toggle:
+            li.setCheckState(
+                QtCore.Qt.Unchecked
+                if li.checkState() == QtCore.Qt.Checked
+                else QtCore.Qt.Checked
+            )
 
     def _show_generated_link(self, payload: Dict[str, Any]):
         generated_url = str(payload.get("url") or "")
@@ -2196,10 +2243,12 @@ class GroupContentsDialog(QtWidgets.QDialog):
 
     def _play_generated_stream(self, generated_url: str):
         owner = self.parent()
-        callback = getattr(owner, "play_stream_callback", None)
-        if callable(callback):
-            callback(generated_url)
-            return
+        while owner is not None:
+            callback = getattr(owner, "play_stream_callback", None)
+            if callable(callback):
+                callback(generated_url)
+                return
+            owner = owner.parent()
         QtGui.QDesktopServices.openUrl(QtCore.QUrl(generated_url))
 
     def _set_all_visible(self, selected: bool):
