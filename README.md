@@ -29,6 +29,7 @@ parserima, dok su dva najjača napredna modula sačuvana u punom obliku.
   - brzi i normalni M3U export
   - resolve stream linkova i provjera nakon exporta
   - slanje odabranog profila iz Balkan MAC testa u Studio desnim klikom
+  - dvoklik na kanal generira tokenizirani link, M3U zapis i prikaz svih metapodataka
 - ugrađeni Balkan IPTV tab u istom Aurora prozoru:
   - napredni Xtream/MAC skener i Ex-YU/Balkan detekcija
   - export TXT i M3U po regiji
@@ -40,6 +41,8 @@ parserima, dok su dva najjača napredna modula sačuvana u punom obliku.
   - trezor s importom/exportom i ponovnim skeniranjem
 - Aurora SQLite arhiva s JSON import/exportom i CSV exportom
 - moderno tamno sučelje s glavnim tabovima i podtabovima
+- automatski update ponovno pokreće aplikaciju tek nakon gašenja stare instance,
+  kroz izdvojenu Linux `.sh` ili Windows `.bat` skriptu
 
 ## Pokretanje
 

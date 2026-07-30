@@ -96,7 +96,7 @@ def resource_dir() -> Path:
 
 RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
-DEFAULT_APP_VERSION = "v1.1.7"
+DEFAULT_APP_VERSION = "v1.1.8"
 
 
 def app_version() -> str:
@@ -832,7 +832,7 @@ EN_TRANSLATIONS = {
     "Update je preuzet. Aurora će se zatvoriti, zamijeniti aplikaciju i ponovno pokrenuti.": "Update downloaded. Aurora will close, replace the application and restart.",
     "Update je preuzet. Aurora će se zatvoriti i pokrenuti novu verziju.": "Update downloaded. Aurora will close and start the new version.",
     "Update se instalira...": "Installing update...",
-    "Nova AppImage verzija je pokrenuta.": "New AppImage version has started.",
+    "Nova verzija pokrenut će se nakon zatvaranja Aurore.": "The new version will start after Aurora closes.",
     "Instalacija .deb updatea je pokrenuta.": ".deb update installation has started.",
     "Instalacija updatea je pokrenuta. Aurora će se zatvoriti i ponovno pokrenuti nakon uspješne instalacije. Ako sustav zatraži lozinku, potvrdi instalaciju.": "Update installation has started. Aurora will close and restart after successful installation. If the system asks for a password, confirm the installation.",
     "Instalacija updatea je pokrenuta. Ako sustav zatraži lozinku, potvrdi instalaciju i zatim ponovno pokreni Auroru.": "Update installation has started. If the system asks for a password, confirm the installation and then restart Aurora.",
@@ -2662,7 +2662,7 @@ class AuroraWindow(QMainWindow):
         if sys.platform.startswith("win") and name.endswith(".exe"):
             target = self.current_executable_path()
             if not target:
-                self.open_downloaded_update(path)
+                self.launch_downloaded_update(path)
                 return
             self.launch_replacement_update(path, target)
             return
@@ -2701,7 +2701,49 @@ class AuroraWindow(QMainWindow):
         QMessageBox.information(self, self.translate_static_text("Ažuriranja"), message)
 
     def launch_downloaded_update(self, path: Path) -> None:
-        subprocess.Popen([str(path)])
+        if sys.platform.startswith("win"):
+            script = Path(tempfile.gettempdir()) / f"aurora-iptv-restart-{os.getpid()}.bat"
+            script.write_text(
+                "\n".join(
+                    [
+                        "@echo off",
+                        "setlocal",
+                        f"set \"PID={os.getpid()}\"",
+                        f"set \"APP={path}\"",
+                        ":wait",
+                        "tasklist /FI \"PID eq %PID%\" | find \"%PID%\" >nul",
+                        "if not errorlevel 1 (",
+                        "  timeout /t 1 /nobreak >nul",
+                        "  goto wait",
+                        ")",
+                        "start \"\" \"%APP%\"",
+                        "del \"%~f0\" >nul 2>nul",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            self.spawn_update_script(["cmd", "/c", str(script)])
+        else:
+            script = Path(tempfile.gettempdir()) / f"aurora-iptv-restart-{os.getpid()}.sh"
+            script.write_text(
+                "\n".join(
+                    [
+                        "#!/bin/sh",
+                        "set -eu",
+                        f"PID={os.getpid()}",
+                        f"APP={shlex.quote(str(path))}",
+                        "while kill -0 \"$PID\" 2>/dev/null; do sleep 0.5; done",
+                        "chmod +x \"$APP\"",
+                        "nohup \"$APP\" >/dev/null 2>&1 &",
+                        "rm -f \"$0\"",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            script.chmod(script.stat().st_mode | 0o755)
+            self.spawn_update_script(["sh", str(script)])
         message = self.translate_static_text(
             "Update je preuzet. Aurora će se zatvoriti i pokrenuti novu verziju."
         )
@@ -2713,10 +2755,23 @@ class AuroraWindow(QMainWindow):
         if hasattr(self, "update_status_label"):
             self.update_status_label.setText(self.translate_static_text("Update se instalira..."))
         self.statusBar().showMessage(
-            self.translate_static_text("Nova AppImage verzija je pokrenuta."),
+            self.translate_static_text(
+                "Nova verzija pokrenut će se nakon zatvaranja Aurore."
+            ),
             7000,
         )
         QTimer.singleShot(300, QApplication.instance().quit)
+
+    @staticmethod
+    def spawn_update_script(command: list[str]) -> None:
+        if sys.platform.startswith("win"):
+            flags = (
+                getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+                | getattr(subprocess, "DETACHED_PROCESS", 0)
+            )
+            subprocess.Popen(command, creationflags=flags, close_fds=True)
+        else:
+            subprocess.Popen(command, start_new_session=True, close_fds=True)
 
     def launch_replacement_update(
         self,
@@ -2750,7 +2805,7 @@ class AuroraWindow(QMainWindow):
                 ),
                 encoding="utf-8",
             )
-            subprocess.Popen(["cmd", "/c", str(script)])
+            self.spawn_update_script(["cmd", "/c", str(script)])
         else:
             script = Path(tempfile.gettempdir()) / f"aurora-iptv-update-{os.getpid()}.sh"
             cleanup = " ".join(shlex.quote(str(path)) for path in cleanup_paths)
@@ -2773,7 +2828,7 @@ class AuroraWindow(QMainWindow):
                 encoding="utf-8",
             )
             script.chmod(script.stat().st_mode | 0o755)
-            subprocess.Popen(["sh", str(script)])
+            self.spawn_update_script(["sh", str(script)])
 
         QMessageBox.information(
             self,
@@ -2882,7 +2937,7 @@ class AuroraWindow(QMainWindow):
             encoding="utf-8",
         )
         script.chmod(script.stat().st_mode | 0o755)
-        subprocess.Popen(["sh", str(script)])
+        self.spawn_update_script(["sh", str(script)])
 
     def open_paypal_donation(self) -> None:
         webbrowser.open(PAYPAL_DONATION_URL)
@@ -3963,6 +4018,7 @@ class AuroraWindow(QMainWindow):
         exec(compile(source, str(source_path), "exec"), module.__dict__)
         self.stalker_embedded_module = module
         self.stalker_embedded_window = module.MainWindow()
+        self.stalker_embedded_window.play_stream_callback = self.play_stream_in_vlc
         self.patch_stalker_expiry_check()
         content = self.stalker_embedded_window.takeCentralWidget()
         content.setStyleSheet(self.stalker_embedded_window.styleSheet())

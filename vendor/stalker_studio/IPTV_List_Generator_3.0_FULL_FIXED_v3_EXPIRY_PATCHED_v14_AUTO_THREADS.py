@@ -21,6 +21,7 @@ Patch (po zahtjevu):
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import sys
@@ -142,6 +143,36 @@ def build_extinf_line(item: "Item", group_title: str) -> str:
             break
     attr_text = " ".join(f'{k}="{v}"' for k, v in attrs.items() if v)
     return f"#EXTINF:-1 {attr_text},{name}"
+
+
+def build_generated_item_details(
+    item: "Item",
+    category: "Category",
+    base_url: str,
+    mac: str,
+    generated_url: str,
+) -> str:
+    type_label = category_type_label(category.category_type)
+    group_title = f"{type_label} | {category.name}"
+    m3u_entry = f"{build_extinf_line(item, group_title)}\n{generated_url}"
+    metadata = json.dumps(
+        item.raw or {},
+        ensure_ascii=False,
+        indent=2,
+        default=str,
+        sort_keys=True,
+    )
+    return (
+        f"Naziv: {item.name}\n"
+        f"Vrsta: {type_label}\n"
+        f"Grupa: {category.name}\n"
+        f"Portal: {base_url}\n"
+        f"MAC: {mac}\n\n"
+        f"GENERIRANI LINK S TOKENOM\n{generated_url}\n\n"
+        f"M3U ZAPIS\n{m3u_entry}\n\n"
+        f"IZVORNA NAREDBA / LINK\n{item.url}\n\n"
+        f"SVI METAPODACI\n{metadata}"
+    )
 
 
 def default_export_filename(base_url: str) -> str:
@@ -1151,6 +1182,49 @@ class WorkerSignals(QtCore.QObject):
     progress = QtCore.Signal(int, str)  # percent, message
 
 
+class ResolveItemLinkWorker(QtCore.QRunnable):
+    def __init__(
+        self,
+        client: BasePortalClient,
+        category: Category,
+        item: Item,
+    ):
+        super().__init__()
+        self.client = client
+        self.category = category
+        self.item = item
+        self.signals = WorkerSignals()
+
+    @QtCore.Slot()
+    def run(self):
+        try:
+            url = (self.client.resolve_play_url(self.item) or "").strip()
+            if self.category.category_type == "IPTV":
+                url = maybe_fix_localhost_stream(
+                    url,
+                    self.client.base_url,
+                    self.client.mac,
+                )
+            if not url:
+                raise RuntimeError("Portal nije vratio link za reprodukciju.")
+            self.signals.finished.emit(
+                {
+                    "item": self.item,
+                    "category": self.category,
+                    "url": url,
+                    "details": build_generated_item_details(
+                        self.item,
+                        self.category,
+                        self.client.base_url,
+                        self.client.mac,
+                        url,
+                    ),
+                }
+            )
+        except Exception as error:
+            self.signals.error.emit(str(error) or type(error).__name__)
+
+
 def fetch_categories_with_progress(
     client: BasePortalClient,
     auto_adult_pins: bool,
@@ -1868,10 +1942,15 @@ class GroupContentsDialog(QtWidgets.QDialog):
         parent: QtWidgets.QWidget,
         category: Category,
         selection_store: Dict[Tuple[str, str, str], bool],
+        client: BasePortalClient,
+        thread_pool: QtCore.QThreadPool,
     ):
         super().__init__(parent)
         self.category = category
         self.selection_store = selection_store
+        self.client = client
+        self.thread_pool = thread_pool
+        self._resolving_link = False
 
         self.setWindowTitle(f"{category.category_type} – {category.name}")
         self.resize(820, 680)
@@ -1901,6 +1980,14 @@ class GroupContentsDialog(QtWidgets.QDialog):
         top.addWidget(self.count_lbl)
         root.addLayout(top)
 
+        hint = QtWidgets.QLabel(
+            "Dvoklik na kanal/film/epizodu generira link s tokenom i prikazuje "
+            "M3U zapis te sve dostupne metapodatke."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: #a9b4c3;")
+        root.addWidget(hint)
+
         self.progress = QtWidgets.QProgressBar()
         self.progress.setRange(0, 100)
         self.progress.setValue(0)
@@ -1925,6 +2012,7 @@ class GroupContentsDialog(QtWidgets.QDialog):
         self.btn_check_all.clicked.connect(lambda: self._set_all_visible(True))
         self.btn_uncheck_all.clicked.connect(lambda: self._set_all_visible(False))
         self.btn_retry.clicked.connect(lambda: self.retry_requested.emit())
+        self.listw.itemDoubleClicked.connect(self._generate_item_link)
 
     def set_loading(self, msg: str = "Učitavam..."):
         self.progress.setVisible(True)
@@ -1974,12 +2062,16 @@ class GroupContentsDialog(QtWidgets.QDialog):
             li.setFlags(li.flags() | QtCore.Qt.ItemIsUserCheckable | QtCore.Qt.ItemIsEnabled)
             li.setCheckState(QtCore.Qt.Checked if selected else QtCore.Qt.Unchecked)
             li.setData(QtCore.Qt.UserRole, uid)
+            li.setToolTip("Dvoklik generira tokenizirani link i prikazuje sve podatke.")
 
             # URL (ako postoji) kao tooltip
             try:
                 u = it.url
                 if u:
-                    li.setToolTip(u)
+                    li.setToolTip(
+                        "Dvoklik generira tokenizirani link i prikazuje sve podatke.\n\n"
+                        f"Izvorno: {u}"
+                    )
             except Exception:
                 pass
 
@@ -2019,6 +2111,96 @@ class GroupContentsDialog(QtWidgets.QDialog):
             self._update_count_label()
         except Exception:
             pass
+
+    def _item_for_list_entry(self, li: QtWidgets.QListWidgetItem) -> Optional[Item]:
+        uid = str(li.data(QtCore.Qt.UserRole) or "")
+        if not uid:
+            return None
+        return next((item for item in self._all_items if item_uid(item) == uid), None)
+
+    def _generate_item_link(self, li: QtWidgets.QListWidgetItem):
+        if self._resolving_link:
+            return
+        item = self._item_for_list_entry(li)
+        if not item:
+            return
+        self._resolving_link = True
+        self.progress.setVisible(True)
+        self.progress.setRange(0, 0)
+        self.progress.setFormat("Generiram tokenizirani link...")
+        worker = ResolveItemLinkWorker(self.client, self.category, item)
+
+        def failed(error: str):
+            self._resolving_link = False
+            self.progress.setRange(0, 100)
+            self.progress.setVisible(False)
+            QtWidgets.QMessageBox.critical(
+                self,
+                "Generiranje linka",
+                f"Link nije moguće generirati:\n{error}",
+            )
+
+        def finished(payload: object):
+            self._resolving_link = False
+            self.progress.setRange(0, 100)
+            self.progress.setVisible(False)
+            if isinstance(payload, dict):
+                self._show_generated_link(payload)
+
+        worker.signals.error.connect(failed)
+        worker.signals.finished.connect(finished)
+        self.thread_pool.start(worker)
+
+    def _show_generated_link(self, payload: Dict[str, Any]):
+        generated_url = str(payload.get("url") or "")
+        details = str(payload.get("details") or generated_url)
+        item = payload.get("item")
+        title = item.name if isinstance(item, Item) else "Odabrani kanal"
+
+        dlg = QtWidgets.QDialog(self)
+        dlg.setWindowTitle(f"Tokenizirani link – {title}")
+        dlg.resize(920, 720)
+        root = QtWidgets.QVBoxLayout(dlg)
+        info = QtWidgets.QLabel(
+            "Link je generiran kroz portal create_link. Prikazani su M3U zapis "
+            "i svi dostupni metapodaci."
+        )
+        info.setWordWrap(True)
+        root.addWidget(info)
+
+        output = QtWidgets.QTextEdit()
+        output.setReadOnly(True)
+        output.setPlainText(details)
+        root.addWidget(output, 1)
+
+        actions = QtWidgets.QHBoxLayout()
+        copy_link = QtWidgets.QPushButton("Kopiraj link")
+        copy_all = QtWidgets.QPushButton("Kopiraj sve")
+        play = QtWidgets.QPushButton("Pokreni stream")
+        close = QtWidgets.QPushButton("Zatvori")
+        copy_link.clicked.connect(
+            lambda: QtWidgets.QApplication.clipboard().setText(generated_url)
+        )
+        copy_all.clicked.connect(
+            lambda: QtWidgets.QApplication.clipboard().setText(details)
+        )
+        play.clicked.connect(lambda: self._play_generated_stream(generated_url))
+        close.clicked.connect(dlg.accept)
+        actions.addWidget(copy_link)
+        actions.addWidget(copy_all)
+        actions.addWidget(play)
+        actions.addStretch()
+        actions.addWidget(close)
+        root.addLayout(actions)
+        dlg.exec()
+
+    def _play_generated_stream(self, generated_url: str):
+        owner = self.parent()
+        callback = getattr(owner, "play_stream_callback", None)
+        if callable(callback):
+            callback(generated_url)
+            return
+        QtGui.QDesktopServices.openUrl(QtCore.QUrl(generated_url))
 
     def _set_all_visible(self, selected: bool):
         # Select/deselect ONLY the items currently visible (i.e. after filtering)
@@ -2523,7 +2705,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "<li>Enter <b>Portal URL</b> and <b>MAC</b>. The URL may include <code>/c</code>.</li>"
                 "<li>Use <b>Portal Test</b> to quickly check whether the URL/MAC responds before loading everything.</li>"
                 "<li>Click <b>Connect and load groups</b>. Wait while the program works in the background; avoid clicking other actions until loading finishes.</li>"
-                "<li>Tick the groups you want to export. Double-click a group to load its channels/movies/episodes and adjust per-item selection.</li>"
+                "<li>Tick the groups you want to export. Double-click a group to load its channels/movies/episodes and adjust per-item selection. Double-click an item to generate its tokenized play URL, M3U entry, and metadata.</li>"
                 "<li>Click <b>Export M3U</b>. The log shows how many Live, VOD, and TV Shows links were exported.</li>"
                 "</ol>"
                 "<h3>Selection</h3>"
@@ -2558,7 +2740,7 @@ class MainWindow(QtWidgets.QMainWindow):
                 "<li>Upiši <b>Portal URL</b> i <b>MAC</b>. URL može sadržavati <code>/c</code>.</li>"
                 "<li>Koristi <b>Test portala</b> za brzu provjeru radi li URL/MAC prije punog učitavanja.</li>"
                 "<li>Klikni <b>Poveži i povuci grupe</b>. Pričekaj dok program radi u pozadini i nemoj klikati druge akcije dok učitavanje ne završi.</li>"
-                "<li>Označi grupe koje želiš exportati. Dvoklik na grupu učitava kanale/filmove/epizode i omogućuje izbor pojedinačnih stavki.</li>"
+                "<li>Označi grupe koje želiš exportati. Dvoklik na grupu učitava kanale/filmove/epizode i omogućuje izbor pojedinačnih stavki. Dvoklik na stavku generira tokenizirani play URL, M3U zapis i metapodatke.</li>"
                 "<li>Klikni <b>Export M3U</b>. Log prikazuje koliko je Live, VOD i TV Shows linkova exportano.</li>"
                 "</ol>"
                 "<h3>Označavanje</h3>"
@@ -2605,7 +2787,13 @@ class MainWindow(QtWidgets.QMainWindow):
             QtWidgets.QMessageBox.information(self, 'Info', 'Prvo povuci kategorije (Poveži).')
             return
 
-        dlg = GroupContentsDialog(self, category, self.item_selection_state)
+        dlg = GroupContentsDialog(
+            self,
+            category,
+            self.item_selection_state,
+            self.client,
+            self.thread_pool,
+        )
         dlg.set_loading('Učitavam sadržaj grupe...')
         dlg.show()
 
