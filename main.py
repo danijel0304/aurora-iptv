@@ -98,7 +98,7 @@ def resource_dir() -> Path:
 
 RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
-DEFAULT_APP_VERSION = "v1.1.9"
+DEFAULT_APP_VERSION = "v1.1.10"
 
 
 def app_version() -> str:
@@ -995,10 +995,16 @@ QSplitter::handle:hover { background: #2a3656; }
 class FlowLayout(QLayout):
     """Responsive toolbar layout that moves actions onto additional rows."""
 
-    def __init__(self, parent=None, spacing: int = 8):
+    def __init__(
+        self,
+        parent=None,
+        spacing: int = 8,
+        align_right: bool = False,
+    ):
         super().__init__(parent)
         self._items: list[QLayoutItem] = []
         self._spacing = spacing
+        self._align_right = align_right
         self.setContentsMargins(0, 0, 0, 0)
 
     def addItem(self, item: QLayoutItem) -> None:
@@ -1031,7 +1037,18 @@ class FlowLayout(QLayout):
         self._do_layout(rect, test_only=False)
 
     def sizeHint(self) -> QSize:
-        return self.minimumSize()
+        if not self._items:
+            return QSize()
+        widths = [item.sizeHint().width() for item in self._items]
+        height = max(item.sizeHint().height() for item in self._items)
+        margins = self.contentsMargins()
+        return QSize(
+            sum(widths)
+            + self._spacing * (len(widths) - 1)
+            + margins.left()
+            + margins.right(),
+            height + margins.top() + margins.bottom(),
+        )
 
     def minimumSize(self) -> QSize:
         size = QSize()
@@ -1049,24 +1066,45 @@ class FlowLayout(QLayout):
             -margins.right(),
             -margins.bottom(),
         )
-        x = effective.x()
-        y = effective.y()
+        rows: list[tuple[list[tuple[QLayoutItem, QSize]], int, int]] = []
+        row: list[tuple[QLayoutItem, QSize]] = []
+        row_width = 0
         row_height = 0
-        right = effective.right()
-
         for item in self._items:
             hint = item.sizeHint().expandedTo(item.minimumSize())
-            next_x = x + hint.width()
-            if x > effective.x() and next_x > right:
-                x = effective.x()
-                y += row_height + self._spacing
-                next_x = x + hint.width()
+            projected_width = (
+                hint.width()
+                if not row
+                else row_width + self._spacing + hint.width()
+            )
+            if row and projected_width > effective.width():
+                rows.append((row, row_width, row_height))
+                row = []
+                row_width = 0
                 row_height = 0
-            if not test_only:
-                item.setGeometry(QRect(QPoint(x, y), hint))
-            x = next_x + self._spacing
+            if row:
+                row_width += self._spacing
+            row.append((item, hint))
+            row_width += hint.width()
             row_height = max(row_height, hint.height())
-        return y + row_height - rect.y() + margins.bottom()
+        if row:
+            rows.append((row, row_width, row_height))
+
+        y = effective.y()
+        for row_items, current_width, current_height in rows:
+            x = effective.x()
+            if self._align_right:
+                x += max(0, effective.width() - current_width)
+            for index, (item, hint) in enumerate(row_items):
+                if not test_only:
+                    item.setGeometry(QRect(QPoint(x, y), hint))
+                x += hint.width()
+                if index + 1 < len(row_items):
+                    x += self._spacing
+            y += current_height + self._spacing
+        if rows:
+            y -= self._spacing
+        return y - rect.y() + margins.bottom()
 
 
 def fit_button_text(widget: QPushButton) -> None:
@@ -2386,20 +2424,23 @@ class AuroraWindow(QMainWindow):
         root.setContentsMargins(22, 18, 22, 18)
         root.setSpacing(14)
 
-        title_row = QVBoxLayout()
-        title_row.setSpacing(10)
+        title_row = QHBoxLayout()
+        title_row.setSpacing(18)
         brand = QVBoxLayout()
         title = QLabel("Aurora IPTV")
         title.setObjectName("Title")
         self.subtitle_label = QLabel(self.tr_ui("subtitle"))
         self.subtitle_label.setObjectName("Subtitle")
+        self.subtitle_label.setWordWrap(True)
+        self.subtitle_label.setMaximumWidth(300)
         brand.addWidget(title)
         brand.addWidget(self.subtitle_label)
         title_row.addLayout(brand)
+        title_row.addStretch(1)
 
         header_controls = QVBoxLayout()
         header_controls.setSpacing(6)
-        header_actions = FlowLayout(spacing=8)
+        header_actions = FlowLayout(spacing=8, align_right=True)
         self.setting_check_updates_startup = QCheckBox(
             "Automatski provjeri update pri pokretanju"
         )
@@ -2428,6 +2469,7 @@ class AuroraWindow(QMainWindow):
         self.setting_language.addItem("English", "en")
         self.setting_language.addItem("Hrvatski", "hr")
         self.setting_language.setMaximumWidth(120)
+        preference_row.addStretch(1)
         preference_row.addWidget(QLabel("Theme"))
         preference_row.addWidget(self.setting_theme)
         preference_row.addWidget(QLabel("Language"))
@@ -2437,10 +2479,12 @@ class AuroraWindow(QMainWindow):
         self.update_status_label = QLabel("Nije još provjereno.")
         self.update_status_label.setObjectName("Subtitle")
         preference_row.addWidget(self.connection_label)
-        preference_row.addStretch()
         header_controls.addLayout(header_actions)
         header_controls.addLayout(preference_row)
-        header_controls.addWidget(self.update_status_label)
+        header_controls.addWidget(
+            self.update_status_label,
+            alignment=Qt.AlignmentFlag.AlignRight,
+        )
         title_row.addLayout(header_controls)
         root.addLayout(title_row)
 
