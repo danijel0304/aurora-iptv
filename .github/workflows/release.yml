@@ -37,6 +37,7 @@ jobs:
             --name AuroraIPTV `
             --onefile `
             --windowed `
+            --icon packaging\aurora-iptv.ico `
             --clean `
             --add-data "aurora_version.txt;." `
             --add-data "vendor\stalker_studio;vendor\stalker_studio" `

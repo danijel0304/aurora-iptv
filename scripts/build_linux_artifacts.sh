@@ -28,6 +28,7 @@ python -m PyInstaller \
     --name "$BINARY_NAME" \
     --onefile \
     --windowed \
+    --icon "$ROOT_DIR/packaging/$APP_ID.ico" \
     --clean \
     --add-data "$VERSION_FILE:." \
     --add-data "$ROOT_DIR/vendor/stalker_studio:vendor/stalker_studio" \
