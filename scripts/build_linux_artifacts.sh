@@ -31,6 +31,7 @@ python -m PyInstaller \
     --icon "$ROOT_DIR/packaging/$APP_ID.ico" \
     --clean \
     --add-data "$VERSION_FILE:." \
+    --add-data "$ROOT_DIR/packaging/$APP_ID.png:packaging" \
     --add-data "$ROOT_DIR/vendor/stalker_studio:vendor/stalker_studio" \
     --add-data "$ROOT_DIR/vendor/balkan_iptv:vendor/balkan_iptv" \
     --collect-all PyQt6 \

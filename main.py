@@ -20,7 +20,7 @@ from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from PyQt6.QtCore import QPoint, QRect, QSize, QSettings, QThread, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QColor
+from PyQt6.QtGui import QAction, QColor, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -51,6 +51,7 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QSplitter,
     QStatusBar,
+    QSplashScreen,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -98,6 +99,7 @@ def resource_dir() -> Path:
 
 RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
+APP_ICON_PATH = RESOURCE_DIR / "packaging" / "aurora-iptv.png"
 DEFAULT_APP_VERSION = "v1.1.12"
 
 
@@ -6959,9 +6961,27 @@ class AuroraWindow(QMainWindow):
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("Aurora IPTV")
+    app.setWindowIcon(QIcon(str(APP_ICON_PATH)))
     app.setStyleSheet(STYLE)
+    splash_image = QPixmap(str(APP_ICON_PATH)).scaled(
+        256,
+        256,
+        Qt.AspectRatioMode.KeepAspectRatio,
+        Qt.TransformationMode.SmoothTransformation,
+    )
+    splash = QSplashScreen(splash_image)
+    splash.setWindowIcon(QIcon(str(APP_ICON_PATH)))
+    splash.showMessage("Pokrećem aplikaciju…", Qt.AlignmentFlag.AlignBottom | Qt.AlignmentFlag.AlignHCenter, QColor("#e5e7eb"))
+    splash.show()
+    app.processEvents()
     window = AuroraWindow()
-    window.show()
+    window.setWindowIcon(QIcon(str(APP_ICON_PATH)))
+
+    def show_main_window() -> None:
+        window.show()
+        splash.finish(window)
+
+    QTimer.singleShot(3000, show_main_window)
     return app.exec()
 
 
