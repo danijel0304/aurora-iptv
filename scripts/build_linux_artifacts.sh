@@ -43,8 +43,8 @@ APPDIR="$WORK_DIR/AppDir"
 install -Dm755 "$DIST_DIR/$BINARY_NAME" "$APPDIR/usr/bin/$BINARY_NAME"
 install -Dm644 "$ROOT_DIR/packaging/$APP_ID.desktop" "$APPDIR/$APP_ID.desktop"
 install -Dm644 "$ROOT_DIR/packaging/$APP_ID.desktop" "$APPDIR/usr/share/applications/$APP_ID.desktop"
-install -Dm644 "$ROOT_DIR/packaging/$APP_ID.svg" "$APPDIR/$APP_ID.svg"
-install -Dm644 "$ROOT_DIR/packaging/$APP_ID.svg" "$APPDIR/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg"
+install -Dm644 "$ROOT_DIR/packaging/$APP_ID.png" "$APPDIR/$APP_ID.png"
+install -Dm644 "$ROOT_DIR/packaging/$APP_ID.png" "$APPDIR/usr/share/icons/hicolor/512x512/apps/$APP_ID.png"
 
 cat > "$APPDIR/AppRun" <<'APP_RUN'
 #!/usr/bin/env bash
@@ -64,7 +64,7 @@ APPIMAGE_EXTRACT_AND_RUN=1 ARCH="$ARCH" "$APPIMAGETOOL" \
 DEB_ROOT="$WORK_DIR/deb/$APP_ID"
 install -Dm755 "$DIST_DIR/$BINARY_NAME" "$DEB_ROOT/usr/bin/$BINARY_NAME"
 install -Dm644 "$ROOT_DIR/packaging/$APP_ID.desktop" "$DEB_ROOT/usr/share/applications/$APP_ID.desktop"
-install -Dm644 "$ROOT_DIR/packaging/$APP_ID.svg" "$DEB_ROOT/usr/share/icons/hicolor/scalable/apps/$APP_ID.svg"
+install -Dm644 "$ROOT_DIR/packaging/$APP_ID.png" "$DEB_ROOT/usr/share/icons/hicolor/512x512/apps/$APP_ID.png"
 install -Dm644 "$ROOT_DIR/README.md" "$DEB_ROOT/usr/share/doc/$APP_ID/README.md"
 mkdir -p "$DEB_ROOT/DEBIAN"
 cat > "$DEB_ROOT/DEBIAN/control" <<EOF
@@ -84,7 +84,7 @@ TAR_ROOT="$WORK_DIR/tar/Aurora-IPTV"
 install -Dm755 "$DIST_DIR/$BINARY_NAME" "$TAR_ROOT/$BINARY_NAME"
 install -Dm644 "$ROOT_DIR/README.md" "$TAR_ROOT/README.md"
 install -Dm644 "$ROOT_DIR/packaging/$APP_ID.desktop" "$TAR_ROOT/$APP_ID.desktop"
-install -Dm644 "$ROOT_DIR/packaging/$APP_ID.svg" "$TAR_ROOT/$APP_ID.svg"
+install -Dm644 "$ROOT_DIR/packaging/$APP_ID.png" "$TAR_ROOT/$APP_ID.png"
 tar -C "$WORK_DIR/tar" -czf "$OUT_DIR/Aurora-IPTV-$SAFE_VERSION-linux-$ARCH.tar.gz" Aurora-IPTV
 
 ls -lh "$OUT_DIR"

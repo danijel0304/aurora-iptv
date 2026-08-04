@@ -98,7 +98,7 @@ def resource_dir() -> Path:
 
 RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
-DEFAULT_APP_VERSION = "v1.1.10"
+DEFAULT_APP_VERSION = "v1.1.12"
 
 
 def app_version() -> str:
