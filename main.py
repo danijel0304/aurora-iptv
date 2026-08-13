@@ -100,7 +100,7 @@ def resource_dir() -> Path:
 RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
 APP_ICON_PATH = RESOURCE_DIR / "packaging" / "aurora-iptv.png"
-DEFAULT_APP_VERSION = "v1.1.13"
+DEFAULT_APP_VERSION = "v1.1.14"
 
 
 def app_version() -> str:
