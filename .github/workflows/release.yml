@@ -75,6 +75,7 @@ jobs:
             libxcb-render-util0 \
             libxcb-xinerama0 \
             libxkbcommon-x11-0 \
+            rpm \
             wget
 
       - name: Set up Python

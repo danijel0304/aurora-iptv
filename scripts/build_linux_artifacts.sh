@@ -81,6 +81,33 @@ Description: Aurora IPTV desktop toolkit
 EOF
 fakeroot dpkg-deb --build "$DEB_ROOT" "$OUT_DIR/Aurora-IPTV-$SAFE_VERSION-linux-amd64.deb"
 
+RPM_VERSION="${DEB_VERSION//-/.}"
+RPM_TOP="$WORK_DIR/rpmbuild"
+mkdir -p "$RPM_TOP"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+cat > "$RPM_TOP/SPECS/$APP_ID.spec" <<EOF
+Name: $APP_ID
+Version: $RPM_VERSION
+Release: 1%{?dist}
+Summary: Aurora IPTV desktop toolkit
+License: MIT
+BuildArch: x86_64
+
+%description
+Unified desktop tool for IPTV list analysis, checking, export and archive workflows.
+
+%install
+install -Dm755 $DIST_DIR/$BINARY_NAME %{buildroot}%{_bindir}/$BINARY_NAME
+install -Dm644 $ROOT_DIR/packaging/$APP_ID.desktop %{buildroot}%{_datadir}/applications/$APP_ID.desktop
+install -Dm644 $ROOT_DIR/packaging/$APP_ID.png %{buildroot}%{_datadir}/icons/hicolor/512x512/apps/$APP_ID.png
+
+%files
+%{_bindir}/$BINARY_NAME
+%{_datadir}/applications/$APP_ID.desktop
+%{_datadir}/icons/hicolor/512x512/apps/$APP_ID.png
+EOF
+rpmbuild -bb --define "_topdir $RPM_TOP" "$RPM_TOP/SPECS/$APP_ID.spec"
+cp "$RPM_TOP/RPMS/x86_64/"*.rpm "$OUT_DIR/"
+
 TAR_ROOT="$WORK_DIR/tar/Aurora-IPTV"
 install -Dm755 "$DIST_DIR/$BINARY_NAME" "$TAR_ROOT/$BINARY_NAME"
 install -Dm644 "$ROOT_DIR/README.md" "$TAR_ROOT/README.md"
