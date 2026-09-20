@@ -269,31 +269,69 @@ class XtreamScanWorker(QThread):
         self.concurrency = concurrency
         self.timeout = timeout
         self.running = True
+        self._tasks: list[asyncio.Task] = []
+        self._loop: asyncio.AbstractEventLoop | None = None
+        self._loop_closed = False
 
     def stop(self) -> None:
         self.running = False
+        self.requestInterruption()
+        loop = self._loop
+        if loop and not self._loop_closed:
+            try:
+                loop.call_soon_threadsafe(self._cancel_all_tasks)
+            except RuntimeError:
+                pass
+
+    def _cancel_all_tasks(self) -> None:
+        for task in self._tasks:
+            if not task.done():
+                task.cancel()
 
     def run(self) -> None:
         asyncio.run(self._run())
 
     async def _run(self) -> None:
+        self._loop = asyncio.get_running_loop()
         limits = httpx.Limits(
             max_connections=max(10, self.concurrency * 2),
             max_keepalive_connections=max(5, self.concurrency),
         )
         semaphore = asyncio.Semaphore(self.concurrency)
-        async with httpx.AsyncClient(verify=False, follow_redirects=True, limits=limits) as client:
-            tasks = [self._check(client, semaphore, url) for url in self.urls]
-            completed = 0
-            for future in asyncio.as_completed(tasks):
-                if not self.running:
-                    break
-                result = await future
-                completed += 1
-                if result:
-                    self.result.emit(result)
-                self.progress.emit(completed, len(tasks))
-        self.finished_scan.emit()
+        try:
+            async with httpx.AsyncClient(verify=False, follow_redirects=True, limits=limits) as client:
+                if self.isInterruptionRequested() or not self.running:
+                    return
+                self._tasks = [
+                    asyncio.create_task(self._check(client, semaphore, url))
+                    for url in self.urls
+                ]
+                completed = 0
+                total = len(self._tasks)
+                try:
+                    for future in asyncio.as_completed(self._tasks):
+                        if self.isInterruptionRequested() or not self.running:
+                            break
+                        result = await future
+                        completed += 1
+                        if result:
+                            self.result.emit(result)
+                        self.progress.emit(completed, total)
+                except asyncio.CancelledError:
+                    pass
+                except Exception:
+                    pass
+                finally:
+                    for task in self._tasks:
+                        if not task.done():
+                            task.cancel()
+                    if self._tasks:
+                        await asyncio.gather(*self._tasks, return_exceptions=True)
+        finally:
+            self._tasks.clear()
+            self._loop_closed = True
+            self._loop = None
+            self.finished_scan.emit()
 
     async def _check(
         self, client: httpx.AsyncClient, semaphore: asyncio.Semaphore, playlist_url: str
@@ -352,11 +390,37 @@ class XtreamScanWorker(QThread):
                         f"{user_info.get('active_cons', '0')}/"
                         f"{user_info.get('max_connections', '1')}"
                     ),
+                    free_slots=_format_free_slots(
+                        user_info.get("active_cons"), user_info.get("max_connections")
+                    ),
                     content=f"Live {live} · VOD {vod} · Serije {series}",
                 )
         except Exception as error:
             result["status"] = type(error).__name__.replace("Exception", "") or "Greška"
         return result
+
+
+def _parse_conn_value(val: str | None) -> tuple[int | None, bool]:
+    if val is None:
+        return None, False
+    s = str(val).strip().lower()
+    if s in ("unlimited", "unlim", "infinity", "∞"):
+        return None, True
+    try:
+        return int(s), False
+    except (ValueError, TypeError):
+        return None, False
+
+
+def _format_free_slots(active: str | None, maximum: str | None) -> str:
+    active_val, _ = _parse_conn_value(active)
+    max_val, max_unlimited = _parse_conn_value(maximum)
+    if max_unlimited or max_val is None:
+        return "∞" if max_unlimited else "?"
+    if active_val is None:
+        return "?"
+    free = max(0, max_val - active_val)
+    return str(free)
 
 
 class MacHttpWorker(QThread):
@@ -384,6 +448,7 @@ class MacHttpWorker(QThread):
 
     def stop(self) -> None:
         self.running = False
+        self.requestInterruption()
 
     def run(self) -> None:
         asyncio.run(self._run())
@@ -391,7 +456,7 @@ class MacHttpWorker(QThread):
     async def _run(self) -> None:
         async with httpx.AsyncClient(verify=False, follow_redirects=True) as client:
             for index, mac in enumerate(self.macs, 1):
-                if not self.running:
+                if self.isInterruptionRequested() or not self.running:
                     break
                 started = time.monotonic()
                 request_url = self.url
@@ -444,43 +509,85 @@ class StalkerProfileCheckWorker(QThread):
 
     def stop(self) -> None:
         self.running = False
+        self.requestInterruption()
 
     def run(self) -> None:
         asyncio.run(self._run())
 
     async def _run(self) -> None:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (QtEmbedded; U; Linux; MAG250)",
-            "Accept": "*/*",
-        }
-        async with httpx.AsyncClient(verify=False, follow_redirects=True, headers=headers) as client:
-            for index, (portal, mac) in enumerate(self.profiles, 1):
-                if not self.running:
-                    break
-                started = time.monotonic()
-                status = "Greška"
-                works = False
-                try:
-                    response = await client.get(
-                        portal,
-                        headers={**headers, "Cookie": f"mac={normalize_mac(mac)}"},
-                        timeout=self.timeout,
-                    )
-                    status = f"HTTP {response.status_code}"
-                    works = 200 <= response.status_code < 400
-                except Exception as error:
-                    status = type(error).__name__.replace("Exception", "") or "Greška"
-                self.result.emit(
-                    {
-                        "portal": portal,
-                        "mac": normalize_mac(mac),
-                        "works": "DA" if works else "NE",
-                        "status": status,
-                        "ping": f"{int((time.monotonic() - started) * 1000)} ms",
-                    }
-                )
-                self.progress.emit(index, len(self.profiles))
+        for index, (portal, mac) in enumerate(self.profiles, 1):
+            if self.isInterruptionRequested() or not self.running:
+                break
+            started = time.monotonic()
+            portal = normalize_url(portal)
+            mac = normalize_mac(mac)
+            result = {
+                "portal": portal,
+                "mac": mac,
+                "works": "NE",
+                "status": "Greška",
+                "expiry": "—",
+                "ping": "—",
+            }
+            client = None
+            try:
+                if self.isInterruptionRequested() or not self.running:
+                    self.result.emit(result)
+                    self.progress.emit(index, len(self.profiles))
+                    continue
+
+                stalker_module = _load_stalker_studio_module()
+                if hasattr(stalker_module, "PORTAL_CONNECT_TIMEOUT"):
+                    stalker_module.PORTAL_CONNECT_TIMEOUT = self.timeout
+                client = stalker_module.build_auto_client(portal, mac, adult_pin="0000")
+                if hasattr(client, "timeout"):
+                    client.timeout = self.timeout
+
+                if self.isInterruptionRequested() or not self.running:
+                    self.result.emit(result)
+                    self.progress.emit(index, len(self.profiles))
+                    continue
+
+                categories = client.get_categories("IPTV")
+                if not categories:
+                    result["status"] = "Nema Live grupa"
+                    self.result.emit(result)
+                    self.progress.emit(index, len(self.profiles))
+                    continue
+
+                result["works"] = "DA"
+                result["status"] = "Online"
+
+                expiry = self._fetch_expiry(client)
+                if expiry:
+                    result["expiry"] = expiry
+
+            except Exception as error:
+                result["status"] = type(error).__name__.replace("Exception", "") or "Greška"
+            finally:
+                result["ping"] = f"{int((time.monotonic() - started) * 1000)} ms"
+                if client:
+                    try:
+                        client.close()
+                    except Exception:
+                        pass
+            self.result.emit(result)
+            self.progress.emit(index, len(self.profiles))
         self.finished_scan.emit()
+
+    def _fetch_expiry(self, client) -> str | None:
+        try:
+            if hasattr(client, "get_account_expiry_info"):
+                dt, src = client.get_account_expiry_info()
+                if dt:
+                    return dt.strftime("%d.%m.%Y.")
+            if hasattr(client, "get_account_expiry"):
+                dt = client.get_account_expiry()
+                if dt:
+                    return dt.strftime("%d.%m.%Y.")
+        except Exception:
+            pass
+        return None
 
 
 class StalkerBalkanMacWorker(QThread):
@@ -508,6 +615,7 @@ class StalkerBalkanMacWorker(QThread):
 
     def stop(self) -> None:
         self.running = False
+        self.requestInterruption()
 
     def _t(self, key: str, **values: object) -> str:
         text = STALKER_BALKAN_TEXT[self.language].get(key, key)
@@ -516,10 +624,24 @@ class StalkerBalkanMacWorker(QThread):
     def _yes_no(self, works: bool) -> str:
         return self._t("yes" if works else "no")
 
+    def _fetch_expiry(self, client) -> str | None:
+        try:
+            if hasattr(client, "get_account_expiry_info"):
+                dt, src = client.get_account_expiry_info()
+                if dt:
+                    return dt.strftime("%d.%m.%Y.")
+            if hasattr(client, "get_account_expiry"):
+                dt = client.get_account_expiry()
+                if dt:
+                    return dt.strftime("%d.%m.%Y.")
+        except Exception:
+            pass
+        return None
+
     def run(self) -> None:
         total = len(self.profiles)
         for index, (portal, mac) in enumerate(self.profiles, 1):
-            if not self.running:
+            if self.isInterruptionRequested() or not self.running:
                 break
             self.result.emit(self._check_profile(portal, mac))
             self.progress.emit(index, total)
@@ -541,6 +663,9 @@ class StalkerBalkanMacWorker(QThread):
         }
         client = None
         try:
+            if self.isInterruptionRequested() or not self.running:
+                return result
+
             stalker_module = _load_stalker_studio_module()
             scanner_module = _load_balkan_scanner_module()
             scanner = scanner_module.IPTVScanner(timeout=self.timeout)
@@ -552,10 +677,17 @@ class StalkerBalkanMacWorker(QThread):
             if hasattr(client, "timeout"):
                 client.timeout = self.timeout
 
+            if self.isInterruptionRequested() or not self.running:
+                return result
+
             categories = client.get_categories("IPTV")
             if not categories:
                 result["status"] = self._t("no_live_groups")
                 return result
+
+            expiry = self._fetch_expiry(client)
+            if expiry:
+                result["expiry"] = expiry
 
             candidates, balkan_stats, checked_categories = self._collect_balkan_candidates(
                 client,
@@ -576,7 +708,7 @@ class StalkerBalkanMacWorker(QThread):
             sample_results = []
             working_count = 0
             for sample in tested_samples:
-                if not self.running:
+                if self.isInterruptionRequested() or not self.running:
                     break
                 item = sample["item"]
                 try:
@@ -628,6 +760,8 @@ class StalkerBalkanMacWorker(QThread):
         ranked_categories = []
         balkan_stats = {key: 0 for key in scanner.balkan_signals.keys()}
         for category in categories:
+            if self.isInterruptionRequested() or not self.running:
+                break
             stats = scanner.score_text_for_balkan(category.name, source="category")
             score = sum(int(value or 0) for value in stats.values())
             ranked_categories.append((score, category, stats))
@@ -644,7 +778,7 @@ class StalkerBalkanMacWorker(QThread):
         checked_categories = 0
         target_pool_size = max(self.sample_size * 8, 24)
         for category_score, category, category_stats in category_pool:
-            if not self.running:
+            if self.isInterruptionRequested() or not self.running:
                 break
             checked_categories += 1
             try:
@@ -657,6 +791,8 @@ class StalkerBalkanMacWorker(QThread):
 
             category_candidates = []
             for item in items:
+                if self.isInterruptionRequested() or not self.running:
+                    break
                 combined_text = f"{category.name} {item.name}"
                 stream_stats = scanner.score_text_for_balkan(combined_text, source="stream")
                 stream_score = sum(int(value or 0) for value in stream_stats.values())
@@ -683,6 +819,8 @@ class StalkerBalkanMacWorker(QThread):
                 fallback_items = list(items)
                 self._random.shuffle(fallback_items)
                 for item in fallback_items[:target_pool_size]:
+                    if self.isInterruptionRequested() or not self.running:
+                        break
                     key = (item.name.strip().lower(), (item.url or "").strip().lower())
                     if key in seen:
                         continue

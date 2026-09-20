@@ -996,7 +996,30 @@ class BalkanFusionApp(QMainWindow):
         self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.table.customContextMenuRequested.connect(self.table_menu)
         self.table.cellClicked.connect(self.open_exyu_from_result_click)
+        self.table.itemSelectionChanged.connect(self.on_result_selection_changed)
         res_v.addWidget(self.table)
+
+        self.epg_panel = QFrame()
+        self.epg_panel.setFixedHeight(70)
+        self.epg_panel.setStyleSheet("background-color: #21262d; border-radius: 8px; padding: 5px;")
+        self.epg_panel.setVisible(False)
+        epg_layout = QHBoxLayout(self.epg_panel)
+        self.epg_logo = QLabel("EPG")
+        self.epg_logo.setFixedSize(50, 50)
+        self.epg_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.epg_logo.setStyleSheet("background-color: #161b22; border-radius: 4px; color: #8b949e; font-size: 11px;")
+        self.epg_now = QLabel("Odaberite kanal za prikaz EPG-a")
+        self.epg_now.setWordWrap(True)
+        self.epg_next = QLabel("")
+        self.epg_next.setWordWrap(True)
+        self.epg_next.setStyleSheet("color: #8b949e; font-size: 11px;")
+        epg_info = QVBoxLayout()
+        epg_info.addWidget(self.epg_now)
+        epg_info.addWidget(self.epg_next)
+        epg_layout.addWidget(self.epg_logo)
+        epg_layout.addLayout(epg_info)
+        epg_layout.addStretch()
+        res_v.addWidget(self.epg_panel)
 
         self.stack.addWidget(pg_res)
 
@@ -2598,6 +2621,22 @@ class BalkanFusionApp(QMainWindow):
                 self.lbl_epg_now.setText("Greška pri dohvaćanju EPG-a.")
         else:
             self.lbl_epg_now.setText("EPG je dostupan samo za Live TV.")
+
+    def on_result_selection_changed(self):
+        selected_items = self.table.selectedItems()
+        if not selected_items:
+            self.epg_panel.setVisible(False)
+            return
+        row = selected_items[0].row()
+        self.load_epg_for_result_row(row)
+
+    def load_epg_for_result_row(self, row: int):
+        # Balkan "Rezultati" tablica prikazuje Xtream račune (ne pojedinačne kanale).
+        # EPG se može prikazati samo za odabran kanal u "Uređivač Sadržaja" tabu.
+        self.epg_panel.setVisible(True)
+        self.epg_logo.setText("EPG")
+        self.epg_now.setText("EPG dostupan u tabu 'Uređivač Sadržaja'")
+        self.epg_next.setText("Odaberite kanal u tabu 'Uređivač Sadržaja' za prikaz EPG-a.")
 
     def filter_groups(self):
         q = self.txt_filter_groups.text().lower()

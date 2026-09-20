@@ -20,7 +20,7 @@ from urllib.parse import quote, urlencode, urlparse
 from urllib.request import Request, urlopen
 
 from PyQt6.QtCore import QPoint, QRect, QSize, QSettings, QThread, QTimer, Qt, pyqtSignal
-from PyQt6.QtGui import QAction, QColor, QIcon, QPixmap
+from PyQt6.QtGui import QAction, QColor, QIcon, QPixmap, QPalette
 from PyQt6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -100,7 +100,7 @@ def resource_dir() -> Path:
 RESOURCE_DIR = resource_dir()
 APP_DIR = app_data_dir()
 APP_ICON_PATH = RESOURCE_DIR / "packaging" / "aurora-iptv.png"
-DEFAULT_APP_VERSION = "v1.1.14"
+DEFAULT_APP_VERSION = "v1.1.15"
 
 
 def app_version() -> str:
@@ -114,6 +114,25 @@ def app_version() -> str:
             continue
         if version:
             return version
+    if not getattr(sys, "frozen", False):
+        try:
+            repo_root = Path(__file__).resolve().parent
+            git_dir = repo_root / ".git"
+            if git_dir.exists():
+                result = subprocess.run(
+                    ["git", "describe", "--tags", "--always", "--dirty"],
+                    cwd=repo_root,
+                    capture_output=True,
+                    text=True,
+                    timeout=3,
+                )
+                if result.returncode == 0 and result.stdout.strip():
+                    git_ver = result.stdout.strip()
+                    if re.match(r"^v?\d+\.\d+\.\d+$", git_ver):
+                        return git_ver
+                    return DEFAULT_APP_VERSION
+        except Exception:
+            pass
     return DEFAULT_APP_VERSION
 
 
@@ -985,14 +1004,117 @@ QPushButton#StopBtn {
 }
 QLineEdit, QTextEdit, QComboBox, QSpinBox {
     min-height: 30px; border-radius: 8px;
+    background: #0b1223; border: 1px solid #2a3656; color: #e8ecf6;
 }
-QTableWidget { border-radius: 9px; }
+QTableWidget {
+    border-radius: 9px; background: #0c1325; color: #e8ecf6;
+    gridline-color: #222d47; alternate-background-color: #101a30; border: 1px solid #263250;
+}
+QTableWidget::item { padding: 6px; }
+QTableWidget::item:selected { background: #284778; color: #ffffff; }
+QHeaderView::section { background: #17213a; color: #9eb5e5; border: 0; border-right: 1px solid #263250; padding: 8px; font-weight: 700; }
 QSplitter::handle {
     background: #17213a; border: 1px solid #263250; border-radius: 3px;
 }
 QSplitter::handle:hover { background: #2a3656; }
+QProgressBar { background: #0b1223; border: 1px solid #2a3656; border-radius: 7px; text-align: center; min-height: 17px; color: #e8ecf6; }
+QProgressBar::chunk { background: #4c7df0; border-radius: 6px; }
+QCheckBox { spacing: 8px; color: #c9d2e8; }
+QScrollArea { background: transparent; border: 0; }
+QScrollArea > QWidget > QWidget { background: #0b1020; }
+QScrollBar:vertical, QScrollBar:horizontal {
+    background: #0a0f1c; border: 0; margin: 0; width: 12px; height: 12px;
+}
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+    background: #32415f; border-radius: 6px; min-height: 28px; min-width: 28px;
+}
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background: #4e628b; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+QMenu { background: #111a2f; border: 1px solid #263250; color: #e8ecf6; }
+QMenu::item { padding: 8px 24px; }
+QMenu::item:selected { background: #284778; }
+QToolTip {
+    background: #17213a; color: #f3f6ff; border: 1px solid #4e628b;
+    padding: 7px; border-radius: 6px;
+}
 """
 
+BALKAN_EMBED_STYLE_LIGHT = """
+QWidget { background: #e9eef6; color: #0f172a; }
+QStackedWidget, QFrame, QGroupBox { background: #e9eef6; color: #0f172a; }
+QFrame#SideBar {
+    background: #f6f8fc; border-right: 1px solid #aebbd0;
+    min-width: 180px; max-width: 240px;
+}
+QFrame#StatCard, QGroupBox {
+    background: #f8fafd; border: 1px solid #b8c4d8; border-radius: 14px;
+}
+QGroupBox {
+    margin-top: 12px; padding: 14px 10px 10px 10px; font-weight: 800;
+}
+QGroupBox::title {
+    subcontrol-origin: margin; left: 10px; padding: 0 6px; color: #1f365a;
+}
+QLabel { color: #0f172a; }
+QListWidget {
+    background: #fdfefe; border: 1px solid #b8c4d8; border-radius: 9px;
+    alternate-background-color: #eef3f9; padding: 4px;
+}
+QListWidget::item { padding: 6px; border-radius: 5px; }
+QListWidget::item:selected { background: #b9d0ff; color: #08111f; }
+QPushButton#MenuBtn {
+    background: transparent; border: 1px solid transparent; text-align: left;
+    min-height: 38px; padding: 9px 14px; border-radius: 8px;
+    margin: 3px 8px; color: #1f365a; font-weight: 700;
+}
+QPushButton#MenuBtn:hover { background: #dfe7f3; border-color: #aebbd0; color: #0f172a; }
+QPushButton#ActionBtn {
+    background: #2f66df; border-color: #174bbd; color: white;
+    min-height: 40px; border-radius: 8px; font-weight: 800;
+}
+QPushButton#ActionBtn:hover { background: #245bd1; }
+QPushButton#StopBtn {
+    background: #f8dde5; border-color: #d58aa0; color: #8f1838;
+    min-height: 40px; border-radius: 8px; font-weight: 800;
+}
+QLineEdit, QTextEdit, QComboBox, QSpinBox {
+    min-height: 30px; border-radius: 8px;
+    background: #fdfefe; border: 1px solid #aebbd0; color: #0f172a;
+}
+QTableWidget {
+    border-radius: 9px; background: #fdfefe; color: #0f172a;
+    gridline-color: #cfd8e6; alternate-background-color: #eef3f9; border: 1px solid #b8c4d8;
+}
+QTableWidget::item { padding: 6px; }
+QTableWidget::item:selected { background: #b9d0ff; color: #08111f; }
+QHeaderView::section { background: #dfe7f3; color: #1f365a; border: 0; border-right: 1px solid #b8c4d8; padding: 8px; font-weight: 800; }
+QSplitter::handle {
+    background: #dfe7f3; border: 1px solid #aebbd0; border-radius: 3px;
+}
+QSplitter::handle:hover { background: #c9d7eb; }
+QProgressBar { background: #f8fafd; border: 1px solid #aebbd0; border-radius: 7px; text-align: center; min-height: 17px; color: #0f172a; }
+QProgressBar::chunk { background: #2f66df; border-radius: 6px; }
+QCheckBox { spacing: 8px; color: #1f2f46; font-weight: 600; }
+QScrollArea { background: transparent; border: 0; }
+QScrollArea > QWidget > QWidget { background: #e9eef6; }
+QScrollBar:vertical, QScrollBar:horizontal {
+    background: #dfe7f3; border: 0; margin: 0; width: 12px; height: 12px;
+}
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+    background: #8293ad; border-radius: 6px; min-height: 28px; min-width: 28px;
+}
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover { background: #64748b; }
+QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
+QScrollBar::add-page, QScrollBar::sub-page { background: transparent; }
+QMenu { background: #f8fafd; border: 1px solid #aebbd0; color: #0f172a; }
+QMenu::item { padding: 8px 24px; }
+QMenu::item:selected { background: #b9d0ff; }
+QToolTip {
+    background: #f8fafd; color: #0f172a; border: 1px solid #8293ad;
+    padding: 7px; border-radius: 6px;
+}
+"""
 
 class FlowLayout(QLayout):
     """Responsive toolbar layout that moves actions onto additional rows."""
@@ -1177,6 +1299,32 @@ def restyle_long_button(widget: QPushButton, minimum_width: int = 150) -> None:
     widget.setMinimumHeight(36)
     widget.setMinimumWidth(max(minimum_width, widget.minimumWidth()))
     fit_button_text(widget)
+
+
+class NumericTableWidgetItem(QTableWidgetItem):
+    def __init__(self, text: str = "", numeric_value: int | float | None = None):
+        super().__init__(text)
+        if numeric_value is not None:
+            self.setData(Qt.ItemDataRole.UserRole, numeric_value)
+        else:
+            self._set_sort_value_from_text(text)
+
+    def _set_sort_value_from_text(self, text: str) -> None:
+        t = text.strip()
+        if t == "∞":
+            self.setData(Qt.ItemDataRole.UserRole, float("inf"))
+        elif t == "?":
+            self.setData(Qt.ItemDataRole.UserRole, float("-inf"))
+
+    def __lt__(self, other: QTableWidgetItem) -> bool:
+        try:
+            my_val = self.data(Qt.ItemDataRole.UserRole)
+            other_val = other.data(Qt.ItemDataRole.UserRole)
+            if my_val is not None and other_val is not None:
+                return float(my_val) < float(other_val)
+        except (TypeError, ValueError):
+            pass
+        return super().__lt__(other)
 
 
 def patch_fusion_balkan_detection(fusion_module) -> None:
@@ -1740,9 +1888,7 @@ def patch_fusion_balkan_detection(fusion_module) -> None:
             worker.quit()
         if hasattr(worker, "wait"):
             worker.wait(timeout)
-        if hasattr(worker, "isRunning") and worker.isRunning() and hasattr(worker, "terminate"):
-            worker.terminate()
-            worker.wait(300)
+        # No terminate - rely on cooperative cancellation via is_running flag
 
     def stop_fusion_background_work(self) -> None:
         self.bulk_stream_queue = []
@@ -2127,6 +2273,467 @@ def patch_fusion_balkan_detection(fusion_module) -> None:
     app_class._aurora_original_setup_ui = original_setup_ui
 
 
+def patch_fusion_balkan_theme(fusion_module, theme: str = "dark") -> None:
+    """Comprehensively patch vendor BalkanFusionApp for full theme support."""
+    app_class = getattr(fusion_module, "BalkanFusionApp", None)
+    if not app_class or getattr(app_class, "_aurora_theme_patched", False):
+        return
+
+    # Store theme in module for dynamic access
+    fusion_module._aurora_current_theme = theme
+
+    # ===== THEME COLOR DEFINITIONS =====
+    DARK_COLORS = {
+        "window_bg": "#0d1117", "widget_bg": "#0d1117", "sidebar_bg": "#10172a",
+        "card_bg": "#111a2f", "card_border": "#263250", "group_bg": "#111a2f",
+        "group_border": "#263250", "title_color": "#9eb5e5", "text_color": "#e8ecf6",
+        "list_bg": "#0c1325", "list_border": "#263250", "list_alt": "#101a30",
+        "list_sel_bg": "#284778", "list_sel_text": "#ffffff",
+        "btn_menu_bg": "transparent", "btn_menu_text": "#dbe6ff", "btn_menu_hover_bg": "#1a2742", "btn_menu_hover_text": "#ffffff",
+        "btn_action_bg": "#4c7df0", "btn_action_hover_bg": "#5b89f2",
+        "btn_stop_bg": "#402137", "btn_stop_hover_bg": "#6e304c", "btn_stop_text": "#ff9eb9",
+        "input_bg": "#0b1223", "input_border": "#2a3656", "input_text": "#e8ecf6",
+        "table_bg": "#0c1325", "table_border": "#263250", "table_grid": "#222d47", "table_alt": "#101a30", "table_text": "#e8ecf6",
+        "table_sel_bg": "#284778", "table_sel_text": "#ffffff",
+        "header_bg": "#17213a", "header_text": "#9eb5e5", "header_border": "#263250",
+        "splitter_bg": "#17213a", "splitter_border": "#263250", "splitter_hover": "#2a3656",
+        "progress_bg": "#0b1223", "progress_border": "#2a3656", "progress_chunk": "#4c7df0", "progress_text": "#e8ecf6",
+        "checkbox_text": "#c9d2e8",
+        "scroll_bg": "transparent", "scroll_widget_bg": "#0d1020",
+        "scrollbar_bg": "#0a0f1c", "scrollbar_handle": "#32415f", "scrollbar_hover": "#4e628b",
+        "menu_bg": "#111a2f", "menu_border": "#263250", "menu_text": "#e8ecf6", "menu_sel_bg": "#284778",
+        "tooltip_bg": "#17213a", "tooltip_text": "#f3f6ff", "tooltip_border": "#4e628b",
+        "statcard_bg": "#111a2f", "statcard_border": "#263250",
+        "epg_panel_bg": "#1a2742", "epg_logo_bg": "#161b22", "epg_text": "#9eb5e5",
+        "info_panel_bg": "#1a2742",
+        "bottom_panel_bg": "#161b22", "bottom_panel_border": "#30363d",
+        "row_bg_online_balkan": QColor("#1f2e1f"), "row_bg_online": QColor("#2e2e1f"),
+        "row_bg_offline": QColor("#2b1111"), "row_bg_suspicious_yes": QColor("#1f2e1f"),
+        "row_bg_suspicious_no": QColor("#2e2e1f"), "status_online": QColor("#3fb950"),
+        "status_offline": QColor("#da3633"), "status_balkan": QColor("#58a6ff"),
+        "status_full": QColor("#da3633"), "grade_A": QColor("#3fb950"),
+        "grade_B": QColor("#58a6ff"), "grade_C": QColor("#d29922"), "grade_D": QColor("#da3633"),
+        "default_text": QColor("#c9d1d9"), "btn_stalker_bg": "#21262d", "btn_stalker_text": "#58a6ff",
+        "fusion_title": "#58a6ff", "fusion_subtitle": "#8b949e",
+    }
+
+    LIGHT_COLORS = {
+        "window_bg": "#e9eef6", "widget_bg": "#e9eef6", "sidebar_bg": "#f6f8fc",
+        "card_bg": "#f8fafd", "card_border": "#b8c4d8", "group_bg": "#f8fafd",
+        "group_border": "#b8c4d8", "title_color": "#1f365a", "text_color": "#0f172a",
+        "list_bg": "#fdfefe", "list_border": "#b8c4d8", "list_alt": "#eef3f9",
+        "list_sel_bg": "#b9d0ff", "list_sel_text": "#08111f",
+        "btn_menu_bg": "transparent", "btn_menu_text": "#1f365a", "btn_menu_hover_bg": "#dfe7f3", "btn_menu_hover_text": "#0f172a",
+        "btn_action_bg": "#2f66df", "btn_action_hover_bg": "#245bd1",
+        "btn_stop_bg": "#f8dde5", "btn_stop_hover_bg": "#d58aa0", "btn_stop_text": "#8f1838",
+        "input_bg": "#fdfefe", "input_border": "#aebbd0", "input_text": "#0f172a",
+        "table_bg": "#fdfefe", "table_border": "#b8c4d8", "table_grid": "#cfd8e6", "table_alt": "#eef3f9", "table_text": "#0f172a",
+        "table_sel_bg": "#b9d0ff", "table_sel_text": "#08111f",
+        "header_bg": "#dfe7f3", "header_text": "#1f365a", "header_border": "#b8c4d8",
+        "splitter_bg": "#dfe7f3", "splitter_border": "#aebbd0", "splitter_hover": "#c9d7eb",
+        "progress_bg": "#f8fafd", "progress_border": "#aebbd0", "progress_chunk": "#2f66df", "progress_text": "#0f172a",
+        "checkbox_text": "#1f2f46",
+        "scroll_bg": "transparent", "scroll_widget_bg": "#e9eef6",
+        "scrollbar_bg": "#dfe7f3", "scrollbar_handle": "#8293ad", "scrollbar_hover": "#64748b",
+        "menu_bg": "#f8fafd", "menu_border": "#aebbd0", "menu_text": "#0f172a", "menu_sel_bg": "#b9d0ff",
+        "tooltip_bg": "#f8fafd", "tooltip_text": "#0f172a", "tooltip_border": "#8293ad",
+        "statcard_bg": "#f8fafd", "statcard_border": "#b8c4d8",
+        "epg_panel_bg": "#eef3f9", "epg_logo_bg": "#fdfefe", "epg_text": "#1f365a",
+        "info_panel_bg": "#eef3f9",
+        "bottom_panel_bg": "#f6f8fc", "bottom_panel_border": "#aebbd0",
+        "row_bg_online_balkan": QColor("#d4e6f1"), "row_bg_online": QColor("#e8f5e9"),
+        "row_bg_offline": QColor("#fadbd8"), "row_bg_suspicious_yes": QColor("#d5f5e3"),
+        "row_bg_suspicious_no": QColor("#fadbd8"), "status_online": QColor("#1e8e3e"),
+        "status_offline": QColor("#c0392b"), "status_balkan": QColor("#1a73e8"),
+        "status_full": QColor("#c0392b"), "grade_A": QColor("#1e8e3e"),
+        "grade_B": QColor("#1a73e8"), "grade_C": QColor("#d39e00"), "grade_D": QColor("#c0392b"),
+        "default_text": QColor("#1a2530"), "btn_stalker_bg": "#eef3f9", "btn_stalker_text": "#1a73e8",
+        "fusion_title": "#1a73e8", "fusion_subtitle": "#34445c",
+    }
+
+    def get_colors(theme_name: str) -> dict:
+        return LIGHT_COLORS if theme_name == "light" else DARK_COLORS
+
+    def build_stylesheet(theme_name: str) -> str:
+        """Build complete stylesheet from theme colors."""
+        c = get_colors(theme_name)
+        return f"""
+QWidget {{ background: {c['window_bg']}; color: {c['text_color']}; }}
+QStackedWidget, QFrame, QGroupBox {{ background: {c['widget_bg']}; color: {c['text_color']}; }}
+QFrame#SideBar {{
+    background: {c['sidebar_bg']}; border-right: 1px solid {c['card_border']};
+    min-width: 180px; max-width: 240px;
+}}
+QFrame#StatCard, QGroupBox {{
+    background: {c['statcard_bg']}; border: 1px solid {c['statcard_border']}; border-radius: 14px;
+}}
+QGroupBox {{
+    margin-top: 12px; padding: 14px 10px 10px 10px; font-weight: 800;
+}}
+QGroupBox::title {{
+    subcontrol-origin: margin; left: 10px; padding: 0 6px; color: {c['title_color']};
+}}
+QLabel {{ color: {c['text_color']}; }}
+QListWidget {{
+    background: {c['list_bg']}; border: 1px solid {c['list_border']}; border-radius: 9px;
+    alternate-background-color: {c['list_alt']}; padding: 4px;
+}}
+QListWidget::item {{ padding: 6px; border-radius: 5px; }}
+QListWidget::item:selected {{ background: {c['list_sel_bg']}; color: {c['list_sel_text']}; }}
+QPushButton#MenuBtn {{
+    background: {c['btn_menu_bg']}; border: 1px solid transparent; text-align: left;
+    min-height: 38px; padding: 9px 14px; border-radius: 8px;
+    margin: 3px 8px; color: {c['btn_menu_text']}; font-weight: 700;
+}}
+QPushButton#MenuBtn:hover {{ background: {c['btn_menu_hover_bg']}; border-color: {c['card_border']}; color: {c['btn_menu_hover_text']}; }}
+QPushButton#ActionBtn {{
+    background: {c['btn_action_bg']}; border-color: {c['btn_action_hover_bg']}; color: white;
+    min-height: 40px; border-radius: 8px; font-weight: 800;
+}}
+QPushButton#ActionBtn:hover {{ background: {c['btn_action_hover_bg']}; }}
+QPushButton#StopBtn {{
+    background: {c['btn_stop_bg']}; border-color: {c['btn_stop_hover_bg']}; color: {c['btn_stop_text']};
+    min-height: 40px; border-radius: 8px; font-weight: 800;
+}}
+QLineEdit, QTextEdit, QComboBox, QSpinBox {{
+    min-height: 30px; border-radius: 8px;
+    background: {c['input_bg']}; border: 1px solid {c['input_border']}; color: {c['input_text']};
+}}
+QTableWidget {{
+    border-radius: 9px; background: {c['table_bg']}; color: {c['table_text']};
+    gridline-color: {c['table_grid']}; alternate-background-color: {c['table_alt']}; border: 1px solid {c['table_border']};
+}}
+QTableWidget::item {{ padding: 6px; }}
+QTableWidget::item:selected {{ background: {c['table_sel_bg']}; color: {c['table_sel_text']}; }}
+QHeaderView::section {{ background: {c['header_bg']}; color: {c['header_text']}; border: 0; border-right: 1px solid {c['header_border']}; padding: 8px; font-weight: 800; }}
+QSplitter::handle {{
+    background: {c['splitter_bg']}; border: 1px solid {c['splitter_border']}; border-radius: 3px;
+}}
+QSplitter::handle:hover {{ background: {c['splitter_hover']}; }}
+QProgressBar {{ background: {c['progress_bg']}; border: 1px solid {c['progress_border']}; border-radius: 7px; text-align: center; min-height: 17px; color: {c['progress_text']}; }}
+QProgressBar::chunk {{ background: {c['progress_chunk']}; border-radius: 6px; }}
+QCheckBox {{ spacing: 8px; color: {c['checkbox_text']}; font-weight: 600; }}
+QScrollArea {{ background: transparent; border: 0; }}
+QScrollArea > QWidget > QWidget {{ background: {c['scroll_widget_bg']}; }}
+QScrollBar:vertical, QScrollBar:horizontal {{
+    background: {c['scrollbar_bg']}; border: 0; margin: 0; width: 12px; height: 12px;
+}}
+QScrollBar::handle:vertical, QScrollBar::handle:horizontal {{
+    background: {c['scrollbar_handle']}; border-radius: 6px; min-height: 28px; min-width: 28px;
+}}
+QScrollBar::handle:vertical:hover, QScrollBar::handle:horizontal:hover {{ background: {c['scrollbar_hover']}; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
+QMenu {{ background: {c['menu_bg']}; border: 1px solid {c['menu_border']}; color: {c['menu_text']}; }}
+QMenu::item {{ padding: 8px 24px; }}
+QMenu::item:selected {{ background: {c['menu_sel_bg']}; }}
+QToolTip {{
+    background: {c['tooltip_bg']}; color: {c['tooltip_text']}; border: 1px solid {c['tooltip_border']};
+    padding: 7px; border-radius: 6px;
+}}
+QDialog {{ background: {c['window_bg']}; color: {c['text_color']}; }}
+QFileDialog {{ background: {c['window_bg']}; color: {c['text_color']}; }}
+"""
+
+    # Add palette builder
+    def build_palette(theme_name: str) -> QPalette:
+        c = get_colors(theme_name)
+        pal = QPalette()
+        pal.setColor(QPalette.ColorRole.Window, QColor(c["window_bg"]))
+        pal.setColor(QPalette.ColorRole.WindowText, QColor(c["text_color"]))
+        pal.setColor(QPalette.ColorRole.Base, QColor(c["input_bg"]))
+        pal.setColor(QPalette.ColorRole.AlternateBase, QColor(c["table_alt"]))
+        pal.setColor(QPalette.ColorRole.ToolTipBase, QColor(c["tooltip_bg"]))
+        pal.setColor(QPalette.ColorRole.ToolTipText, QColor(c["tooltip_text"]))
+        pal.setColor(QPalette.ColorRole.Text, QColor(c["text_color"]))
+        pal.setColor(QPalette.ColorRole.Button, QColor(c["card_bg"]))
+        pal.setColor(QPalette.ColorRole.ButtonText, QColor(c["text_color"]))
+        pal.setColor(QPalette.ColorRole.BrightText, QColor(c["status_online"]))
+        pal.setColor(QPalette.ColorRole.Link, QColor(c["status_balkan"]))
+        pal.setColor(QPalette.ColorRole.Highlight, QColor(c["table_sel_bg"]))
+        pal.setColor(QPalette.ColorRole.HighlightedText, QColor(c["table_sel_text"]))
+        return pal
+
+    # Replace the vendor's STYLE_SHEET constant with a function
+    def get_theme_stylesheet():
+        return build_stylesheet(fusion_module._aurora_current_theme)
+
+    def get_theme_palette():
+        return build_palette(fusion_module._aurora_current_theme)
+
+    fusion_module.get_theme_stylesheet = staticmethod(get_theme_stylesheet)
+    fusion_module.get_theme_palette = staticmethod(get_theme_palette)
+
+    # ===== PATCH setStyleSheet(STYLE_SHEET) CALLS =====
+    # We need to find and patch all methods that call self.setStyleSheet(STYLE_SHEET)
+    original_setup_ui = app_class.setup_ui
+
+    def patched_setup_ui(self, *args, **kwargs):
+        result = original_setup_ui(self, *args, **kwargs)
+        # Apply theme-aware stylesheet to entire window
+        style = fusion_module.get_theme_stylesheet()
+        self.setStyleSheet(style)
+        # Also apply to central widget
+        central = self.centralWidget()
+        if central:
+            central.setStyleSheet(style)
+        # Apply to all child widgets to override individual setStyleSheet calls
+        for widget in self.findChildren(QWidget):
+            widget.setStyleSheet(style)
+        # Also apply palette
+        pal = fusion_module.get_theme_palette()
+        self.setPalette(pal)
+        if central:
+            central.setPalette(pal)
+        for widget in self.findChildren(QWidget):
+            widget.setPalette(pal)
+        # Clear hardcoded colors on table items
+        for table in self.findChildren(QTableWidget):
+            for row in range(table.rowCount()):
+                for col in range(table.columnCount()):
+                    item = table.item(row, col)
+                    if item:
+                        item.setBackground(QColor())
+                        item.setForeground(QColor())
+        return result
+
+    app_class.setup_ui = patched_setup_ui
+
+    # ===== PATCH INDIVIDUAL WIDGET setStyleSheet CALLS =====
+    # These are hardcoded in setup_ui - we override them after setup_ui runs
+    original_toggle_scan = app_class.toggle_scan
+
+    def patched_toggle_scan(self, *args, **kwargs):
+        result = original_toggle_scan(self, *args, **kwargs)
+        # Re-apply theme after scan toggle (it calls setStyleSheet)
+        style = fusion_module.get_theme_stylesheet()
+        pal = fusion_module.get_theme_palette()
+        self.setStyleSheet(style)
+        self.setPalette(pal)
+        central = self.centralWidget()
+        if central:
+            central.setStyleSheet(style)
+            central.setPalette(pal)
+        for widget in self.findChildren(QWidget):
+            widget.setStyleSheet(style)
+            widget.setPalette(pal)
+        return result
+
+    app_class.toggle_scan = patched_toggle_scan
+
+    # Patch open_stalker_window (creates StalkerWindow which sets dark stylesheet)
+    original_open_stalker = getattr(app_class, "open_stalker_window", None)
+    if original_open_stalker:
+        def patched_open_stalker(self, *args, **kwargs):
+            result = original_open_stalker(self, *args, **kwargs)
+            # Apply theme to stalker_window if it exists
+            if hasattr(self, "stalker_window") and self.stalker_window:
+                style = fusion_module.get_theme_stylesheet()
+                pal = fusion_module.get_theme_palette()
+                self.stalker_window.setStyleSheet(style)
+                self.stalker_window.setPalette(pal)
+                for widget in self.stalker_window.findChildren(QWidget):
+                    widget.setStyleSheet(style)
+                    widget.setPalette(pal)
+            return result
+        app_class.open_stalker_window = patched_open_stalker
+
+    # ===== PATCH TABLE ITEM COLORS =====
+    def theme_colors(self):
+        theme = getattr(self, "_aurora_current_theme", "dark")
+        return get_colors(theme)
+
+    # Patch add_res
+    original_add_res = app_class.add_res
+
+    def patched_add_res(self, d):
+        result = original_add_res(self, d)
+        row = self.table.rowCount() - 1
+        if row < 0:
+            return result
+
+        colors = theme_colors(self)
+        exyu = str(d.get("exyu", ""))
+        status = str(d.get("status", ""))
+        conns = str(d.get("conns", ""))
+
+        if status == "Online":
+            bg = colors["row_bg_online_balkan"] if (exyu.startswith("DA") or exyu == "STALKER") else colors["row_bg_online"]
+        else:
+            bg = colors["row_bg_offline"]
+
+        for col in range(self.table.columnCount()):
+            item = self.table.item(row, col)
+            if item:
+                item.setBackground(bg)
+                if col == 4:  # Status
+                    if status == "Online":
+                        item.setForeground(colors["status_online"])
+                    elif status == "Offline":
+                        item.setForeground(colors["status_offline"])
+                elif col == 5 and (exyu.startswith("DA") or exyu == "STALKER"):  # Ex-YU
+                    item.setForeground(colors["status_balkan"])
+                elif col == 8 and self.is_connection_full(conns):  # Connections
+                    item.setForeground(colors["status_full"])
+                elif col == 11:  # Quality
+                    grade_colors = {
+                        "A": colors["grade_A"], "B": colors["grade_B"],
+                        "C": colors["grade_C"], "D": colors["grade_D"],
+                    }
+                    item.setForeground(grade_colors.get(str(item.text()), colors["default_text"]))
+
+        return result
+
+    app_class.add_res = patched_add_res
+
+    # Patch confirm_suspicious_balkan_rows
+    original_confirm = getattr(app_class, "confirm_suspicious_balkan_rows", None)
+    if original_confirm:
+        def patched_confirm(self):
+            original_confirm(self)
+            colors = theme_colors(self)
+            for row in range(self.table.rowCount()):
+                exyu_item = self.table.item(row, 5)
+                if exyu_item and exyu_item.text().startswith("DA"):
+                    bg = colors["row_bg_suspicious_yes"]
+                elif exyu_item and exyu_item.text() == "NE":
+                    bg = colors["row_bg_suspicious_no"]
+                else:
+                    continue
+                for col in range(self.table.columnCount()):
+                    cell = self.table.item(row, col)
+                    if cell:
+                        cell.setBackground(bg)
+        app_class.confirm_suspicious_balkan_rows = patched_confirm
+
+    # Patch update_current_result_balkan
+    original_update_balkan = getattr(app_class, "update_current_result_balkan", None)
+    if original_update_balkan:
+        def patched_update_balkan(self, label):
+            """Apply theme colors after the vendor method marks the selected row.
+
+            BalkanFusionApp resolves the target row internally; its public method
+            accepts only the Balkan status label.
+            """
+            original_update_balkan(self, label)
+            selected = getattr(self, "current_selected_list", None) or {}
+            row = selected.get("row", -1)
+            if row < 0 or row >= self.table.rowCount():
+                row = self.table.currentRow()
+            if row < 0 or row >= self.table.rowCount():
+                return
+            colors = theme_colors(self)
+            item = self.table.item(row, 5)
+            if item:
+                item.setForeground(colors["status_balkan"])
+            bg = colors["row_bg_suspicious_yes"]
+            for col in range(self.table.columnCount()):
+                cell = self.table.item(row, col)
+                if cell:
+                    cell.setBackground(bg)
+        app_class.update_current_result_balkan = patched_update_balkan
+
+    # ===== PATCH HARDCODED WIDGET STYLESHEETS =====
+    # These are set in setup_ui - we need to re-apply after each relevant method
+    # But the patched_setup_ui above handles most of it
+
+    # ===== PATCH DYNAMICALLY CREATED DIALOGS =====
+    # Intercept QFileDialog, QMessageBox creation
+    original_load_file = getattr(app_class, "load_file", None)
+    if original_load_file:
+        def patched_load_file(self, *args, **kwargs):
+            # Apply theme to dialogs
+            app = QApplication.instance()
+            if app:
+                style = fusion_module.get_theme_stylesheet()
+                app.setStyleSheet(app.styleSheet() + style)
+            result = original_load_file(self, *args, **kwargs)
+            return result
+        app_class.load_file = patched_load_file
+
+    # Add method to re-apply theme to all widgets
+    def apply_aurora_theme(self):
+        """Call this after any operation that might reset styles."""
+        # Check theme from module (not self)
+        if not hasattr(fusion_module, "_aurora_current_theme"):
+            return
+        style = fusion_module.get_theme_stylesheet()
+        pal = fusion_module.get_theme_palette()
+        self.setStyleSheet(style)
+        self.setPalette(pal)
+        central = self.centralWidget()
+        if central:
+            central.setStyleSheet(style)
+            central.setPalette(pal)
+        for widget in self.findChildren(QWidget):
+            widget.setStyleSheet(style)
+            widget.setPalette(pal)
+            # Ensure frames use palette for background
+            if isinstance(widget, QFrame):
+                widget.setAutoFillBackground(True)
+        # Clear table item hardcoded colors
+        for table in self.findChildren(QTableWidget):
+            for row in range(table.rowCount()):
+                for col in range(table.columnCount()):
+                    item = table.item(row, col)
+                    if item:
+                        item.setBackground(QColor())
+                        item.setForeground(QColor())
+        # Re-apply theme-aware row colors
+        colors = theme_colors(self)
+        for table in self.findChildren(QTableWidget):
+            for row in range(table.rowCount()):
+                if table.columnCount() < 12:
+                    continue
+                status_item = table.item(row, 4)
+                exyu_item = table.item(row, 5)
+                conns_item = table.item(row, 8)
+                status = status_item.text() if status_item else ""
+                exyu = exyu_item.text() if exyu_item else ""
+                conns = conns_item.text() if conns_item else ""
+                if status == "Online":
+                    bg = colors["row_bg_online_balkan"] if (exyu.startswith("DA") or exyu == "STALKER") else colors["row_bg_online"]
+                else:
+                    bg = colors["row_bg_offline"]
+                for col in range(table.columnCount()):
+                    item = table.item(row, col)
+                    if not item:
+                        continue
+                    item.setBackground(bg)
+                    if col == 4:
+                        if status == "Online":
+                            item.setForeground(colors["status_online"])
+                        elif status == "Offline":
+                            item.setForeground(colors["status_offline"])
+                    elif col == 5 and (exyu.startswith("DA") or exyu == "STALKER"):
+                        item.setForeground(colors["status_balkan"])
+                    elif col == 8 and self.is_connection_full(conns):
+                        item.setForeground(colors["status_full"])
+                    elif col == 11:
+                        grade_colors = {
+                            "A": colors["grade_A"], "B": colors["grade_B"],
+                            "C": colors["grade_C"], "D": colors["grade_D"],
+                        }
+                        item.setForeground(grade_colors.get(str(item.text()), colors["default_text"]))
+
+    app_class.apply_aurora_theme = apply_aurora_theme
+
+    # Also patch the StalkerWindow class if it exists
+    stalker_window_class = getattr(fusion_module, "StalkerWindow", None)
+    if stalker_window_class:
+        original_stalker_init = stalker_window_class.__init__
+
+        def patched_stalker_init(self, *args, **kwargs):
+            result = original_stalker_init(self, *args, **kwargs)
+            if hasattr(self, "_aurora_current_theme"):
+                # This is tricky - the stalker window doesn't have access to fusion_module
+                pass
+            return result
+        stalker_window_class.__init__ = patched_stalker_init
+
+    app_class._aurora_theme_patched = True
+
+
 class MetricCard(QFrame):
     def __init__(self, title: str, value: str = "0"):
         super().__init__()
@@ -2145,7 +2752,7 @@ class AuroraWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Aurora IPTV")
         self.resize(1440, 900)
-        self.setMinimumSize(760, 520)
+        self.setMinimumSize(720, 480)
         self.settings = QSettings("Aurora", "Aurora IPTV")
         self.language = str(self.settings.value("language", "en"))
         if self.language not in UI_TEXT:
@@ -2317,8 +2924,204 @@ class AuroraWindow(QMainWindow):
             tabs.tabBar().setElideMode(Qt.TextElideMode.ElideNone)
             tabs.tabBar().setUsesScrollButtons(True)
 
+        # Improve table responsiveness
+        for table in root_widget.findChildren(QTableWidget):
+            header = table.horizontalHeader()
+            if not header:
+                continue
+            # Allow columns to shrink below content size
+            header.setMinimumSectionSize(30)
+            # Ensure last section stretches
+            header.setStretchLastSection(True)
+            # Enable interactive resizing for all columns
+            for col in range(header.count()):
+                if header.sectionResizeMode(col) == QHeaderView.ResizeMode.Fixed:
+                    header.setSectionResizeMode(col, QHeaderView.ResizeMode.Interactive)
+
+        # Ensure scroll areas don't force huge minimum heights
+        for scroll in root_widget.findChildren(QScrollArea):
+            scroll.setWidgetResizable(True)
+            scroll.setMinimumHeight(0)
+
+        # Adjust FlowLayout items to wrap properly
+        for flow in root_widget.findChildren(FlowLayout):
+            flow._spacing = 6
+
     def apply_theme(self) -> None:
         QApplication.instance().setStyleSheet(LIGHT_STYLE if self.theme == "light" else STYLE)
+        self.apply_balkan_theme()
+
+    def _clear_table_item_colors(self, table: QTableWidget) -> None:
+        """Clear hardcoded background/foreground on table items so stylesheet takes effect."""
+        for row in range(table.rowCount()):
+            for col in range(table.columnCount()):
+                item = table.item(row, col)
+                if item:
+                    item.setBackground(QColor())
+                    item.setForeground(QColor())
+
+    def apply_balkan_theme(self) -> None:
+        if not self.fusion_window:
+            return
+        # Update theme in fusion_module
+        if self.fusion_module:
+            self.fusion_module._aurora_current_theme = self.theme
+            # Re-patch (idempotent)
+            patch_fusion_balkan_theme(self.fusion_module, self.theme)
+        # Use the vendor's new apply_aurora_theme method if available
+        if hasattr(self.fusion_window, "apply_aurora_theme"):
+            self.fusion_window.apply_aurora_theme()
+        else:
+            # Fallback: manually apply
+            if self.fusion_module and hasattr(self.fusion_module, "get_theme_stylesheet"):
+                style = self.fusion_module.get_theme_stylesheet()
+            else:
+                style = BALKAN_EMBED_STYLE_LIGHT if self.theme == "light" else BALKAN_EMBED_STYLE
+            self.fusion_window.setStyleSheet(style)
+            central = self.fusion_window.centralWidget()
+            if central:
+                central.setStyleSheet(style)
+            for widget in self.fusion_window.findChildren(QWidget):
+                widget.setStyleSheet(style)
+            # Clear hardcoded colors on table items so stylesheet takes effect
+            for table in self.fusion_window.findChildren(QTableWidget):
+                self._clear_table_item_colors(table)
+            # Re-apply colors to existing rows
+            for table in self.fusion_window.findChildren(QTableWidget):
+                self._reapply_table_theme_colors(table)
+        # Refresh instruction labels for Balkan subtabs
+        self._refresh_balkan_instructions()
+
+    def _refresh_balkan_instructions(self) -> None:
+        """Refresh instruction label styles when theme changes."""
+        if not self.fusion_window or not hasattr(self.fusion_window, "stack"):
+            return
+        stack = self.fusion_window.stack
+        for index in range(min(6, stack.count())):
+            page = stack.widget(index)
+            if not page:
+                continue
+            label = page.findChild(QLabel, f"balkan_info_label_{index}")
+            if label:
+                if self.theme == "dark":
+                    label.setStyleSheet("""
+                        QLabel {
+                            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #1a2742, stop:1 #17213a);
+                            border: 1px solid #263250;
+                            border-radius: 8px;
+                            padding: 10px 14px;
+                            color: #9eb5e5;
+                            font-size: 12px;
+                            font-weight: 500;
+                        }
+                    """)
+                else:
+                    label.setStyleSheet("""
+                        QLabel {
+                            background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                                stop:0 #e8f0fe, stop:1 #f0f4f8);
+                            border: 1px solid #b8c4d8;
+                            border-radius: 8px;
+                            padding: 10px 14px;
+                            color: #1f365a;
+                            font-size: 12px;
+                            font-weight: 500;
+                        }
+                    """)
+
+    def _reapply_table_theme_colors(self, table: QTableWidget) -> None:
+        """Re-apply theme-aware colors to all table rows."""
+        if not self.fusion_module:
+            return
+        theme = self.theme
+        colors = self._get_balkan_theme_colors(theme)
+        for row in range(table.rowCount()):
+            # Determine row type from columns
+            status_item = table.item(row, 4) if table.columnCount() > 4 else None
+            exyu_item = table.item(row, 5) if table.columnCount() > 5 else None
+            conns_item = table.item(row, 8) if table.columnCount() > 8 else None
+            quality_item = table.item(row, 11) if table.columnCount() > 11 else None
+
+            status = status_item.text() if status_item else ""
+            exyu = exyu_item.text() if exyu_item else ""
+            conns = conns_item.text() if conns_item else ""
+
+            # Row background
+            if status == "Online":
+                bg = colors["row_bg_online_balkan"] if (exyu.startswith("DA") or exyu == "STALKER") else colors["row_bg_online"]
+            else:
+                bg = colors["row_bg_offline"]
+
+            for col in range(table.columnCount()):
+                item = table.item(row, col)
+                if not item:
+                    continue
+                item.setBackground(bg)
+                if col == 4:  # Status
+                    if status == "Online":
+                        item.setForeground(colors["status_online"])
+                    elif status == "Offline":
+                        item.setForeground(colors["status_offline"])
+                elif col == 5 and (exyu.startswith("DA") or exyu == "STALKER"):  # Ex-YU
+                    item.setForeground(colors["status_balkan"])
+                elif col == 8 and self._is_connection_full(conns):  # Connections
+                    item.setForeground(colors["status_full"])
+                elif col == 11:  # Quality
+                    grade_colors = {
+                        "A": colors["grade_A"],
+                        "B": colors["grade_B"],
+                        "C": colors["grade_C"],
+                        "D": colors["grade_D"],
+                    }
+                    item.setForeground(grade_colors.get(str(item.text()), colors["default_text"]))
+
+    def _get_balkan_theme_colors(self, theme: str) -> dict:
+        if theme == "light":
+            return {
+                "row_bg_online_balkan": QColor("#d4e6f1"),
+                "row_bg_online": QColor("#e8f5e9"),
+                "row_bg_offline": QColor("#fadbd8"),
+                "row_bg_suspicious_yes": QColor("#d5f5e3"),
+                "row_bg_suspicious_no": QColor("#fadbd8"),
+                "status_online": QColor("#1e8e3e"),
+                "status_offline": QColor("#c0392b"),
+                "status_balkan": QColor("#1a73e8"),
+                "status_full": QColor("#c0392b"),
+                "grade_A": QColor("#1e8e3e"),
+                "grade_B": QColor("#1a73e8"),
+                "grade_C": QColor("#d39e00"),
+                "grade_D": QColor("#c0392b"),
+                "default_text": QColor("#1a2530"),
+            }
+        else:
+            return {
+                "row_bg_online_balkan": QColor("#1f2e1f"),
+                "row_bg_online": QColor("#2e2e1f"),
+                "row_bg_offline": QColor("#2b1111"),
+                "row_bg_suspicious_yes": QColor("#1f2e1f"),
+                "row_bg_suspicious_no": QColor("#2e2e1f"),
+                "status_online": QColor("#3fb950"),
+                "status_offline": QColor("#da3633"),
+                "status_balkan": QColor("#58a6ff"),
+                "status_full": QColor("#da3633"),
+                "grade_A": QColor("#3fb950"),
+                "grade_B": QColor("#58a6ff"),
+                "grade_C": QColor("#d29922"),
+                "grade_D": QColor("#da3633"),
+                "default_text": QColor("#c9d1d9"),
+            }
+
+    def _is_connection_full(self, conns_str: str) -> bool:
+        try:
+            parts = conns_str.split("/")
+            if len(parts) == 2:
+                active = int(parts[0])
+                max_conns = int(parts[1])
+                return active >= max_conns and max_conns > 0
+        except Exception:
+            pass
+        return False
 
     def guide_html(self) -> str:
         if self.theme == "light":
@@ -2423,66 +3226,79 @@ class AuroraWindow(QMainWindow):
         self.apply_theme()
         central = QWidget()
         root = QVBoxLayout(central)
-        root.setContentsMargins(22, 18, 22, 18)
-        root.setSpacing(14)
+        root.setContentsMargins(16, 12, 16, 12)
+        root.setSpacing(8)
 
         title_row = QHBoxLayout()
-        title_row.setSpacing(18)
+        title_row.setSpacing(12)
         brand = QVBoxLayout()
+        brand.setSpacing(2)
         title = QLabel("Aurora IPTV")
         title.setObjectName("Title")
+        title.setStyleSheet("font-size: 22px; font-weight: 800;")
         self.subtitle_label = QLabel(self.tr_ui("subtitle"))
         self.subtitle_label.setObjectName("Subtitle")
         self.subtitle_label.setWordWrap(True)
-        self.subtitle_label.setMaximumWidth(300)
+        self.subtitle_label.setMaximumWidth(280)
+        self.subtitle_label.setStyleSheet("font-size: 11px;")
         brand.addWidget(title)
         brand.addWidget(self.subtitle_label)
         title_row.addLayout(brand)
         title_row.addStretch(1)
 
         header_controls = QVBoxLayout()
-        header_controls.setSpacing(6)
-        header_actions = FlowLayout(spacing=8, align_right=True)
+        header_controls.setSpacing(4)
+        header_actions = FlowLayout(spacing=6, align_right=True)
         self.setting_check_updates_startup = QCheckBox(
-            "Automatski provjeri update pri pokretanju"
+            "Auto update pri startu"
         )
         self.setting_check_updates_startup.setChecked(self.check_updates_on_startup)
         self.setting_check_updates_startup.toggled.connect(
             self.update_startup_preference_changed
         )
+        self.setting_check_updates_startup.setStyleSheet("font-size: 11px;")
         self.header_update_button = button("Provjeri update", primary=True)
         self.header_update_button.clicked.connect(lambda: self.start_update_check(manual=True))
+        self.header_update_button.setStyleSheet("font-size: 11px; padding: 4px 10px;")
         self.header_donate_button = button(
-            "Doniraj preko PayPala",
+            "Doniraj",
             tooltip="Otvori PayPal.me stranicu za donaciju.",
         )
         self.header_donate_button.clicked.connect(self.open_paypal_donation)
+        self.header_donate_button.setStyleSheet("font-size: 11px; padding: 4px 10px;")
         header_actions.addWidget(self.setting_check_updates_startup)
         header_actions.addWidget(self.header_update_button)
         header_actions.addWidget(self.header_donate_button)
 
         preference_row = QHBoxLayout()
-        preference_row.setSpacing(8)
+        preference_row.setSpacing(6)
         self.setting_theme = QComboBox()
         self.setting_theme.addItem("Dark", "dark")
         self.setting_theme.addItem("Light", "light")
-        self.setting_theme.setMaximumWidth(110)
+        self.setting_theme.setMaximumWidth(100)
+        self.setting_theme.setStyleSheet("font-size: 11px;")
         self.setting_language = QComboBox()
         self.setting_language.addItem("English", "en")
         self.setting_language.addItem("Hrvatski", "hr")
-        self.setting_language.setMaximumWidth(120)
+        self.setting_language.setMaximumWidth(110)
+        self.setting_language.setStyleSheet("font-size: 11px;")
         preference_row.addStretch(1)
-        preference_row.addWidget(QLabel("Theme"))
+        theme_lbl = QLabel("Tema")
+        theme_lbl.setStyleSheet("font-size: 11px; font-weight: 600;")
+        lang_lbl = QLabel("Jezik")
+        lang_lbl.setStyleSheet("font-size: 11px; font-weight: 600;")
+        preference_row.addWidget(theme_lbl)
         preference_row.addWidget(self.setting_theme)
-        preference_row.addWidget(QLabel("Language"))
+        preference_row.addWidget(lang_lbl)
         preference_row.addWidget(self.setting_language)
         self.connection_label = QLabel(self.tr_ui("ready"))
-        self.connection_label.setStyleSheet("color: #62d6a7; font-weight: 700;")
-        self.update_status_label = QLabel("Nije još provjereno.")
-        self.update_status_label.setObjectName("Subtitle")
+        self.connection_label.setStyleSheet("color: #62d6a7; font-weight: 700; font-size: 11px;")
         preference_row.addWidget(self.connection_label)
         header_controls.addLayout(header_actions)
         header_controls.addLayout(preference_row)
+        self.update_status_label = QLabel("Nije još provjereno.")
+        self.update_status_label.setObjectName("Subtitle")
+        self.update_status_label.setStyleSheet("font-size: 10px;")
         header_controls.addWidget(
             self.update_status_label,
             alignment=Qt.AlignmentFlag.AlignRight,
@@ -2518,17 +3334,70 @@ class AuroraWindow(QMainWindow):
         exit_action.triggered.connect(self.close)
         file_menu.addAction(exit_action)
 
-    def add_scrollable_tab(self, page: QWidget, title: str) -> None:
+    def add_scrollable_tab(self, page: QWidget, title: str, footer: QWidget | None = None) -> None:
+        """Add a tab with scrollable content and optional fixed footer."""
         page.setMinimumWidth(0)
         page.setMinimumHeight(page.sizeHint().height())
         page.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+
+        if footer is None:
+            # Simple scrollable tab (backward compatible)
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            scroll.setWidget(page)
+            self.tabs.addTab(scroll, title)
+        else:
+            # Tab with scrollable content + fixed footer
+            container = QWidget()
+            container_layout = QVBoxLayout(container)
+            container_layout.setContentsMargins(0, 0, 0, 0)
+            container_layout.setSpacing(0)
+
+            scroll = QScrollArea()
+            scroll.setWidgetResizable(True)
+            scroll.setFrameShape(QFrame.Shape.NoFrame)
+            scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+            scroll.setWidget(page)
+            container_layout.addWidget(scroll, 1)
+
+            # Footer separator
+            separator = QFrame()
+            separator.setFrameShape(QFrame.Shape.HLine)
+            separator.setFrameShadow(QFrame.Shadow.Sunken)
+            separator.setStyleSheet("color: #263250; max-height: 1px;")
+            container_layout.addWidget(separator)
+
+            container_layout.addWidget(footer)
+            self.tabs.addTab(container, title)
+
+    def _create_page_with_footer(self, content_page: QWidget, footer: QWidget) -> QWidget:
+        """Create a page with scrollable content and fixed footer."""
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(0)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        scroll.setWidget(page)
-        self.tabs.addTab(scroll, title)
+        scroll.setWidget(content_page)
+        container_layout.addWidget(scroll, 1)
+
+        # Footer separator
+        separator = QFrame()
+        separator.setFrameShape(QFrame.Shape.HLine)
+        separator.setFrameShadow(QFrame.Shadow.Sunken)
+        separator.setStyleSheet("color: #263250; max-height: 1px;")
+        container_layout.addWidget(separator)
+
+        container_layout.addWidget(footer)
+        return container
 
     def select_main_tab(self, title: str) -> None:
         for index in range(self.tabs.count()):
@@ -2685,18 +3554,26 @@ class AuroraWindow(QMainWindow):
         webbrowser.open(self.latest_release_url or GITHUB_RELEASES_URL)
 
     def update_asset_suffixes(self) -> list[str]:
-        if sys.platform.startswith("win"):
-            return ["windows-x86_64.exe"]
-        if sys.platform.startswith("linux"):
-            if os.environ.get("APPIMAGE"):
-                return ["linux-x86_64.AppImage"]
-            executable = Path(sys.executable).resolve()
-            if getattr(sys, "frozen", False) and str(executable).startswith("/usr/"):
-                return ["linux-amd64.deb", "linux-x86_64.AppImage"]
-            if getattr(sys, "frozen", False):
+        if getattr(sys, "frozen", False):
+            if sys.platform.startswith("win"):
+                return ["windows-x86_64.exe"]
+            if sys.platform.startswith("linux"):
+                if os.environ.get("APPIMAGE"):
+                    return ["linux-x86_64.AppImage"]
+                executable = Path(sys.executable).resolve()
+                if str(executable).startswith("/usr/"):
+                    if any(
+                        Path(path).exists()
+                        for path in ("/etc/fedora-release", "/etc/redhat-release", "/etc/SuSE-release")
+                    ):
+                        return [".x86_64.rpm", "linux-x86_64.AppImage"]
+                    return ["linux-amd64.deb", "linux-x86_64.AppImage"]
                 return ["linux-x86_64.tar.gz", "linux-x86_64.AppImage", "linux-amd64.deb"]
-            return ["linux-x86_64.AppImage", "linux-x86_64.tar.gz", "linux-amd64.deb"]
+            return []
         return []
+
+    def is_source_run(self) -> bool:
+        return not getattr(sys, "frozen", False)
 
     def select_update_asset(self, assets: list[dict]) -> dict | None:
         for suffix in self.update_asset_suffixes():
@@ -2714,6 +3591,10 @@ class AuroraWindow(QMainWindow):
         if latest:
             self._prompted_update_versions.add(latest)
 
+        if self.is_source_run():
+            self.offer_source_update(latest, current, manual)
+            return
+
         asset = self.select_update_asset(payload.get("assets", []))
         if not asset:
             message = (
@@ -2730,6 +3611,13 @@ class AuroraWindow(QMainWindow):
                 self.open_latest_release()
             return
 
+        # Startup checks are opt-in through the settings checkbox.  For an
+        # installed release build, complete that opted-in update without an
+        # extra dialog: download, replace the old executable, then relaunch.
+        if not manual:
+            self.start_self_update(asset)
+            return
+
         answer = QMessageBox.question(
             self,
             self.translate_static_text("Ažuriranja"),
@@ -2744,6 +3632,29 @@ class AuroraWindow(QMainWindow):
         )
         if answer == QMessageBox.StandardButton.Yes:
             self.start_self_update(asset)
+
+    def offer_source_update(self, latest: str, current: str, manual: bool) -> None:
+        message = (
+            f"Nova verzija je dostupna: {latest}\n"
+            f"Trenutna verzija (source): {current}\n\n"
+            "Ova verzija se pokreće iz source koda (./run.sh).\n"
+            "Za ažuriranje preporučuje se 'git pull' u terminalu.\n\n"
+            "Želiš otvoriti GitHub release stranicu za ručno preuzimanje?"
+        )
+        if QMessageBox.question(
+            self,
+            self.translate_static_text("Ažuriranja"),
+            message,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        ) == QMessageBox.StandardButton.Yes:
+            self.open_latest_release()
+        elif manual:
+            QMessageBox.information(
+                self,
+                self.translate_static_text("Ažuriranja"),
+                "Pokreni 'git pull' u terminalu za ažuriranje source koda.",
+            )
 
     def start_self_update(self, asset: dict) -> None:
         if self.update_download_worker and self.update_download_worker.isRunning():
@@ -2798,6 +3709,10 @@ class AuroraWindow(QMainWindow):
             return None
 
     def install_downloaded_update(self, result: dict) -> None:
+        if self.is_source_run():
+            self.handle_source_update_download(result)
+            return
+
         name = str(result.get("name") or "").lower()
         path = Path(str(result.get("path") or ""))
         if not path.exists():
@@ -2833,7 +3748,31 @@ class AuroraWindow(QMainWindow):
             self.install_deb_update(path)
             return
 
+        if sys.platform.startswith("linux") and name.endswith(".rpm"):
+            self.install_rpm_update(path)
+            return
+
         self.open_downloaded_update(path)
+
+    def handle_source_update_download(self, result: dict) -> None:
+        name = str(result.get("name") or "")
+        path = Path(str(result.get("path") or ""))
+        if not path.exists():
+            raise FileNotFoundError(str(path))
+
+        message = (
+            f"Update paket je preuzet: {name}\n"
+            f"Lokacija: {path}\n\n"
+            "Ova verzija se pokreće iz source koda (./run.sh).\n"
+            "Preuzeti paket ne može automatski zamijeniti source kod.\n\n"
+            "Opcije:\n"
+            "1. Pokreni 'git pull' u terminalu za ažuriranje source koda\n"
+            "2. Ručno zamijeni instalaciju (AppImage/DEB/EXE) ako koristiš takvu\n"
+            "3. Otvori GitHub release za detalje"
+        )
+        if hasattr(self, "update_status_label"):
+            self.update_status_label.setText(f"Update preuzet: {path}")
+        QMessageBox.information(self, self.translate_static_text("Ažuriranja"), message)
 
     def open_downloaded_update(self, path: Path) -> None:
         message = (
@@ -3083,6 +4022,22 @@ class AuroraWindow(QMainWindow):
         script.chmod(script.stat().st_mode | 0o755)
         self.spawn_update_script(["sh", str(script)])
 
+    def install_rpm_update(self, path: Path) -> None:
+        rpm = shutil.which("rpm") or "/usr/bin/rpm"
+        if not Path(rpm).exists():
+            raise RuntimeError("RPM upravitelj paketa nije pronađen.")
+        app_path = self.current_executable_path() or Path("/usr/bin/AuroraIPTV")
+        command = [rpm, "-U", "--replacepkgs", str(path)]
+        if not (hasattr(os, "geteuid") and os.geteuid() == 0):
+            pkexec = shutil.which("pkexec")
+            if not pkexec:
+                raise RuntimeError("Za RPM update potreban je pkexec.")
+            command.insert(0, pkexec)
+        self.launch_deb_update_script(path, app_path, command)
+        if hasattr(self, "update_status_label"):
+            self.update_status_label.setText(self.translate_static_text("Update se instalira..."))
+        QTimer.singleShot(300, QApplication.instance().quit)
+
     def open_paypal_donation(self) -> None:
         webbrowser.open(PAYPAL_DONATION_URL)
 
@@ -3155,15 +4110,23 @@ class AuroraWindow(QMainWindow):
                 spec.loader.exec_module(self.fusion_module)
             finally:
                 os.chdir(current_dir)
-            self.fusion_module.STYLE_SHEET = BALKAN_EMBED_STYLE
+            self.fusion_module._aurora_current_theme = self.theme
             patch_fusion_balkan_detection(self.fusion_module)
+            patch_fusion_balkan_theme(self.fusion_module, self.theme)
             self.configure_balkan_paths(fusion_data_dir)
             self.fusion_window = self.fusion_module.BalkanFusionApp()
             self.fusion_window.setWindowTitle("Balkan IPTV")
+            # Apply theme to the newly created window
+            if hasattr(self.fusion_window, "apply_aurora_theme"):
+                self.fusion_window.apply_aurora_theme()
             self.polish_balkan_module()
             content = self.fusion_window.takeCentralWidget()
             self.polish_balkan_module(content)
-            content.setStyleSheet(BALKAN_EMBED_STYLE)
+            # Use theme-aware stylesheet from vendor
+            if hasattr(self.fusion_module, "get_theme_stylesheet"):
+                content.setStyleSheet(self.fusion_module.get_theme_stylesheet())
+            else:
+                content.setStyleSheet(BALKAN_EMBED_STYLE_LIGHT if self.theme == "light" else BALKAN_EMBED_STYLE)
             layout.addWidget(content)
         except Exception as error:
             card = QFrame()
@@ -3280,8 +4243,7 @@ class AuroraWindow(QMainWindow):
                     table_widget.setColumnHidden(column, True)
             self.configure_balkan_table_columns(table_widget)
 
-    @staticmethod
-    def configure_balkan_table_columns(table_widget: QTableWidget) -> None:
+    def configure_balkan_table_columns(self, table_widget: QTableWidget) -> None:
         headers = [
             table_widget.horizontalHeaderItem(column).text().strip().lower()
             if table_widget.horizontalHeaderItem(column)
@@ -3335,6 +4297,135 @@ class AuroraWindow(QMainWindow):
             if column in expansion_columns:
                 width += share
             table_widget.setColumnWidth(column, width)
+
+        self._install_balkan_results_context_menu(table_widget)
+
+    def _add_balkan_subtab_instructions(self, root_widget: QWidget) -> None:
+        """Add visible instruction labels for each Balkan subtab."""
+        if not self.fusion_window or not hasattr(self.fusion_window, "stack"):
+            return
+
+        stack = self.fusion_window.stack
+        if stack.count() < 6:
+            return
+
+        # Instruction texts for each subtab
+        if self.language == "hr":
+            instructions = {
+                0: "Učitaj Xtream/M3U liste i pokreni skeniranje. Aurora će pronaći liste s Balkan/Ex-YU kanalima.",
+                1: "Ovdje su pronađene Balkan liste. Filtriraj rezultate, testiraj streamove ili desnim klikom kopiraj podatke.",
+                2: "Odaberi listu i učitaj Live/VOD/Series sadržaj. Klikni kanal za EPG i po potrebi izvezi odabrane programe u M3U.",
+                3: "Pretraži dostupne online liste za željeni kanal ili naziv i spoji pronađene streamove u jednu listu.",
+                4: "Ovdje su spremljene Balkan liste. Možeš ih ponovno otvoriti, provjeriti ili poslati u daljnju obradu.",
+                5: "Ovdje podešavaš mrežu, broj niti, User-Agent, proxy, player i ostale opcije Balkan skenera.",
+            }
+        else:
+            instructions = {
+                0: "Load Xtream/M3U lists and start scanning. Aurora will find lists with Balkan/Ex-YU channels.",
+                1: "Found Balkan lists are shown here. Filter results, test streams, or right-click to copy data.",
+                2: "Select a list and load Live/VOD/Series content. Click a channel for EPG and optionally export selected programs to M3U.",
+                3: "Search available online lists for desired channel or name and merge found streams into one list.",
+                4: "Saved Balkan lists are stored here. You can reopen, re-check, or send them for further processing.",
+                5: "Configure network, thread count, User-Agent, proxy, player, and other Balkan scanner options here.",
+            }
+
+        for index in range(6):
+            page = stack.widget(index)
+            if not page:
+                continue
+            # Check if instruction label already exists
+            existing = page.findChild(QLabel, f"balkan_info_label_{index}")
+            if existing:
+                existing.setText(instructions.get(index, ""))
+                continue
+
+            # Create info label
+            info_label = QLabel(instructions.get(index, ""))
+            info_label.setObjectName(f"balkan_info_label_{index}")
+            info_label.setWordWrap(True)
+            info_label.setStyleSheet("""
+                QLabel {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                        stop:0 #e8f0fe, stop:1 #f0f4f8);
+                    border: 1px solid #b8c4d8;
+                    border-radius: 8px;
+                    padding: 10px 14px;
+                    color: #1f365a;
+                    font-size: 12px;
+                    font-weight: 500;
+                }
+            """)
+            if self.theme == "dark":
+                info_label.setStyleSheet("""
+                    QLabel {
+                        background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                            stop:0 #1a2742, stop:1 #17213a);
+                        border: 1px solid #263250;
+                        border-radius: 8px;
+                        padding: 10px 14px;
+                        color: #9eb5e5;
+                        font-size: 12px;
+                        font-weight: 500;
+                    }
+                """)
+
+            # Insert at top of page layout
+            page_layout = page.layout()
+            if page_layout:
+                page_layout.insertWidget(0, info_label)
+
+    def _install_balkan_results_context_menu(self, table_widget: QTableWidget) -> None:
+        if table_widget.property("balkan_context_menu_installed"):
+            return
+        table_widget.setProperty("balkan_context_menu_installed", True)
+        table_widget.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        table_widget.customContextMenuRequested.connect(
+            lambda pos: self._show_balkan_results_context_menu(table_widget, pos)
+        )
+
+    def _show_balkan_results_context_menu(self, table_widget: QTableWidget, pos) -> None:
+        row = table_widget.rowAt(pos.y())
+        if row < 0:
+            return
+        table_widget.setCurrentCell(row, 0)
+        menu = QMenu(self)
+
+        server_item = table_widget.item(row, 1)
+        user_item = table_widget.item(row, 2)
+        pass_item = table_widget.item(row, 3)
+        m3u_item = table_widget.item(row, 0)
+
+        has_creds = user_item and pass_item and user_item.text() and pass_item.text()
+        has_server = server_item and server_item.text()
+        has_m3u = m3u_item and m3u_item.text()
+
+        if has_server:
+            copy_server = menu.addAction("Kopiraj server/URL")
+            copy_server.triggered.connect(
+                lambda: QApplication.clipboard().setText(server_item.text())
+            )
+        if has_creds:
+            copy_user = menu.addAction("Kopiraj username")
+            copy_user.triggered.connect(
+                lambda: QApplication.clipboard().setText(user_item.text())
+            )
+            copy_pass = menu.addAction("Kopiraj password")
+            copy_pass.triggered.connect(
+                lambda: QApplication.clipboard().setText(pass_item.text())
+            )
+            copy_both = menu.addAction("Kopiraj username + password")
+            copy_both.triggered.connect(
+                lambda: QApplication.clipboard().setText(
+                    f"{user_item.text()}:{pass_item.text()}"
+                )
+            )
+        if has_m3u:
+            copy_m3u = menu.addAction("Kopiraj M3U link")
+            copy_m3u.triggered.connect(
+                lambda: QApplication.clipboard().setText(m3u_item.text())
+            )
+
+        menu.exec(table_widget.viewport().mapToGlobal(pos))
 
     @staticmethod
     def clean_balkan_text(text: str) -> str:
@@ -3626,7 +4717,7 @@ class AuroraWindow(QMainWindow):
         filters.addWidget(self.scan_status_filter)
         layout.addLayout(filters)
         self.scan_table = table(
-            ["Status", "Server", "Korisnik", "Lozinka", "Ističe", "Veze", "Sadržaj", "Ping"]
+            ["Status", "Server", "Korisnik", "Lozinka", "Ističe", "Veze", "Slobodni slotovi", "Sadržaj", "Ping"]
         )
         self.scan_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.scan_table.customContextMenuRequested.connect(self.scan_context_menu)
@@ -3690,8 +4781,10 @@ class AuroraWindow(QMainWindow):
         return page
 
     def _mac_http_checker(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
+        """Create MAC HTTP checker page with fixed footer for progress/controls."""
+        # Content page (scrollable)
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.addWidget(
             tool_description(
                 "Šalje MAC adrese na ovlašteni HTTP endpoint i bilježi koje adrese "
@@ -3732,12 +4825,8 @@ class AuroraWindow(QMainWindow):
         add_btn.clicked.connect(lambda: self.load_text_into(self.mac_check_input, append=True))
         controls.addWidget(load_btn)
         controls.addWidget(add_btn)
-        self.mac_start = button("Pokreni MAC provjeru", primary=True)
-        self.mac_start.clicked.connect(self.toggle_mac_scan)
-        controls.addWidget(self.mac_start)
+        # Start button moved to footer
         layout.addLayout(controls)
-        self.mac_progress = QProgressBar()
-        layout.addWidget(self.mac_progress)
         self.mac_table = table(["MAC adresa", "Radi", "Status", "Vrijeme"])
         layout.addWidget(self.mac_table, 1)
         bottom = FlowLayout()
@@ -3755,7 +4844,30 @@ class AuroraWindow(QMainWindow):
         bottom.addWidget(save_archive_btn)
         bottom.addWidget(clear_btn)
         layout.addLayout(bottom)
-        return page
+
+        # Footer widget (fixed at bottom)
+        footer = QWidget()
+        footer_layout = QVBoxLayout(footer)
+        footer_layout.setContentsMargins(8, 8, 8, 8)
+        footer_layout.setSpacing(6)
+
+        # Progress bar
+        self.mac_progress = QProgressBar()
+        self.mac_progress.setValue(0)
+        self.mac_progress.setMinimumHeight(22)
+        footer_layout.addWidget(self.mac_progress)
+
+        # Start/Stop button row
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        self.mac_start = button("Pokreni MAC provjeru", primary=True)
+        self.mac_start.clicked.connect(self.toggle_mac_scan)
+        self.mac_start.setMinimumHeight(36)
+        btn_row.addStretch(1)
+        btn_row.addWidget(self.mac_start)
+        footer_layout.addLayout(btn_row)
+
+        return self._create_page_with_footer(content, footer)
 
     def _generator_tab(self) -> QWidget:
         page = QWidget()
@@ -3956,11 +5068,146 @@ class AuroraWindow(QMainWindow):
         self.xtream_tabs.setMinimumWidth(0)
         self.xtream_tabs.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self.xtream_tabs.addTab(self._analysis_tab(), "Analiza")
-        self.xtream_tabs.addTab(self._xtream_scanner(), "Provjera računa")
+        self.xtream_tabs.addTab(self._xtream_scanner_page(), "Provjera računa")
         self.xtream_tabs.addTab(self._generator_tab(), "Studio · Live / VOD / Series")
         self.xtream_tabs.addTab(self._advanced_tab(), "Balkan IPTV")
         layout.addWidget(self.xtream_tabs)
         return page
+
+    def _xtream_scanner_page(self) -> QWidget:
+        """Create Provjera računa page with fixed footer for progress/controls."""
+        # Content page (scrollable)
+        content = QWidget()
+        layout = QVBoxLayout(content)
+        layout.addWidget(
+            tool_description(
+                "Provjerava Xtream račune iz get.php URL-ova i prikazuje status, istek, "
+                "broj veza, sadržaj i ping."
+            )
+        )
+        top = FlowLayout()
+        self.scan_threads = QSpinBox()
+        self.scan_threads.setRange(1, 30)
+        self.scan_threads.setValue(8)
+        self.scan_timeout = QSpinBox()
+        self.scan_timeout.setRange(3, 60)
+        self.scan_timeout.setValue(12)
+        top.addWidget(QLabel("Paralelno:"))
+        top.addWidget(self.scan_threads)
+        top.addWidget(QLabel("Timeout:"))
+        top.addWidget(self.scan_timeout)
+        load_btn = button("Učitaj TXT/M3U")
+        load_btn.clicked.connect(self.load_scanner_files)
+        add_btn = button("Dodaj datoteke")
+        add_btn.clicked.connect(lambda: self.load_scanner_files(append=True))
+        top.addWidget(load_btn)
+        top.addWidget(add_btn)
+        top.addStretch()
+        # Start button moved to footer
+        layout.addLayout(top)
+        self.scan_input = QTextEdit()
+        self.scan_input.setMaximumHeight(135)
+        self.scan_input.setPlaceholderText(
+            "Jedan ili više get.php URL-ova s username i password parametrima..."
+        )
+        layout.addWidget(self.scan_input)
+        # Progress bar moved to footer
+        filters = QHBoxLayout()
+        self.scan_filter = QLineEdit()
+        self.scan_filter.setPlaceholderText("Filtriraj server, korisnika, status ili sadržaj...")
+        self.scan_filter.textChanged.connect(self.filter_scan_results)
+        self.scan_status_filter = QComboBox()
+        self.scan_status_filter.addItems(["Svi statusi", "Samo aktivni", "Samo neaktivni"])
+        self.scan_status_filter.currentIndexChanged.connect(self.filter_scan_results)
+        filters.addWidget(self.scan_filter, 1)
+        filters.addWidget(self.scan_status_filter)
+        layout.addLayout(filters)
+        self.scan_table = table(
+            ["Status", "Server", "Korisnik", "Lozinka", "Ističe", "Veze", "Slobodni slotovi", "Sadržaj", "Ping"]
+        )
+        self.scan_table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.scan_table.customContextMenuRequested.connect(self.scan_context_menu)
+        layout.addWidget(self.scan_table, 1)
+        actions = QVBoxLayout()
+        hint_row = QHBoxLayout()
+        hint = QLabel("Desni klik na red za spremanje u arhivu.")
+        hint.setObjectName("Subtitle")
+        hint_row.addWidget(hint)
+        hint_row.addStretch()
+        actions.addLayout(hint_row)
+        export_row = FlowLayout()
+        cleanup_row = FlowLayout()
+        export_txt = button("Export TXT")
+        export_txt.clicked.connect(lambda: self.export_scan_results("txt"))
+        export_csv = button("Export CSV")
+        export_csv.clicked.connect(lambda: self.export_scan_results("csv"))
+        export_json = button("Export JSON")
+        export_json.clicked.connect(lambda: self.export_scan_results("json"))
+        export_m3u = button(
+            "Export aktivnih M3U",
+            tooltip="Napravi M3U listu samo od računa koji su u provjeri označeni kao aktivni.",
+        )
+        export_m3u.clicked.connect(self.export_active_accounts_m3u)
+        save_m3u = button(
+            "Spremi aktivne u arhivu",
+            tooltip="Spremi M3U listu aktivnih računa u bazu bez pisanja datoteke.",
+        )
+        save_m3u.clicked.connect(self.save_active_accounts_m3u_to_vault)
+        send_generator_btn = button(
+            "Pošalji u Generator",
+            tooltip="Prebaci označeni aktivni račun u Live/VOD/Series generator.",
+        )
+        send_generator_btn.clicked.connect(self.send_selected_scan_to_generator)
+        send_balkan_btn = button(
+            "Učitaj u Balkan IPTV",
+            tooltip="Prebaci vidljive URL-ove u Balkan IPTV skener bez kopiranja.",
+        )
+        send_balkan_btn.clicked.connect(self.send_scan_to_balkan)
+        remove_offline = button("Ukloni neaktivne")
+        remove_offline.clicked.connect(self.remove_offline_results)
+        remove_duplicates = button("Ukloni duplikate")
+        remove_duplicates.clicked.connect(self.remove_duplicate_scan_results)
+        clear_btn = button("Očisti rezultate", danger=True)
+        clear_btn.clicked.connect(lambda: self.scan_table.setRowCount(0))
+        export_row.addWidget(export_txt)
+        export_row.addWidget(export_csv)
+        export_row.addWidget(export_json)
+        export_row.addWidget(export_m3u)
+        export_row.addWidget(save_m3u)
+        export_row.addWidget(send_generator_btn)
+        export_row.addWidget(send_balkan_btn)
+        export_row.addStretch()
+        cleanup_row.addWidget(remove_offline)
+        cleanup_row.addWidget(remove_duplicates)
+        cleanup_row.addWidget(clear_btn)
+        cleanup_row.addStretch()
+        actions.addLayout(export_row)
+        actions.addLayout(cleanup_row)
+        layout.addLayout(actions)
+
+        # Footer widget (fixed at bottom)
+        footer = QWidget()
+        footer_layout = QVBoxLayout(footer)
+        footer_layout.setContentsMargins(8, 8, 8, 8)
+        footer_layout.setSpacing(6)
+
+        # Progress bar
+        self.scan_progress = QProgressBar()
+        self.scan_progress.setValue(0)
+        self.scan_progress.setMinimumHeight(22)
+        footer_layout.addWidget(self.scan_progress)
+
+        # Start/Stop button row
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        self.scan_start = button("Pokreni provjeru", primary=True)
+        self.scan_start.clicked.connect(self.toggle_xtream_scan)
+        self.scan_start.setMinimumHeight(36)
+        btn_row.addStretch(1)
+        btn_row.addWidget(self.scan_start)
+        footer_layout.addLayout(btn_row)
+
+        return self._create_page_with_footer(content, footer)
 
     def _stalker_tab(self) -> QWidget:
         page = QWidget()
@@ -4245,8 +5492,10 @@ class AuroraWindow(QMainWindow):
             )
 
     def _stalker_check_tab(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
+        """Create Provjera portala page with fixed footer for progress/controls."""
+        # Content page (scrollable)
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.addWidget(
             tool_description(
                 "Provjerava odgovara li Stalker/MAG portal za URL i pripadajuću MAC adresu."
@@ -4259,10 +5508,7 @@ class AuroraWindow(QMainWindow):
         paste_profiles.clicked.connect(
             lambda: self.add_stalker_check_profiles_from_text(QApplication.clipboard().text())
         )
-        run_check = button("Provjeri URL/MAC", primary=True)
-        run_check.clicked.connect(self.toggle_stalker_profile_check)
-        stop_check = button("Zaustavi provjeru")
-        stop_check.clicked.connect(self.stop_stalker_profile_check)
+        # Run/Stop buttons moved to footer
         remove_bad = button("Ukloni koji ne rade")
         remove_bad.clicked.connect(self.remove_bad_stalker_check_rows)
         remove_selected = button("Ukloni odabrano", danger=True)
@@ -4274,16 +5520,12 @@ class AuroraWindow(QMainWindow):
         controls.addWidget(load_profiles)
         controls.addWidget(paste_profiles)
         controls.addStretch()
-        controls.addWidget(stop_check)
         controls.addWidget(remove_bad)
         controls.addWidget(remove_selected)
         controls.addWidget(export_valid)
         controls.addWidget(open_studio)
-        controls.addWidget(run_check)
         layout.addLayout(controls)
-        self.stalker_check_progress = QProgressBar()
-        layout.addWidget(self.stalker_check_progress)
-        self.stalker_check_table = table(["Portal URL", "MAC adresa", "Radi", "Status", "Vrijeme"])
+        self.stalker_check_table = table(["Portal URL", "MAC adresa", "Radi", "Status", "Ističe", "Vrijeme"])
         self.stalker_check_table.setContextMenuPolicy(
             Qt.ContextMenuPolicy.CustomContextMenu
         )
@@ -4294,11 +5536,40 @@ class AuroraWindow(QMainWindow):
             lambda _item: self.open_selected_stalker_check_in_studio()
         )
         layout.addWidget(self.stalker_check_table, 1)
-        return page
+
+        # Footer widget (fixed at bottom)
+        footer = QWidget()
+        footer_layout = QVBoxLayout(footer)
+        footer_layout.setContentsMargins(8, 8, 8, 8)
+        footer_layout.setSpacing(6)
+
+        # Progress bar
+        self.stalker_check_progress = QProgressBar()
+        self.stalker_check_progress.setValue(0)
+        self.stalker_check_progress.setMinimumHeight(22)
+        footer_layout.addWidget(self.stalker_check_progress)
+
+        # Run/Stop button row
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        run_check = button("Provjeri URL/MAC", primary=True)
+        run_check.clicked.connect(self.toggle_stalker_profile_check)
+        run_check.setMinimumHeight(36)
+        stop_check = button("Zaustavi provjeru")
+        stop_check.clicked.connect(self.stop_stalker_profile_check)
+        stop_check.setMinimumHeight(36)
+        btn_row.addStretch(1)
+        btn_row.addWidget(stop_check)
+        btn_row.addWidget(run_check)
+        footer_layout.addLayout(btn_row)
+
+        return self._create_page_with_footer(content, footer)
 
     def _stalker_balkan_mac_tab(self) -> QWidget:
-        page = QWidget()
-        layout = QVBoxLayout(page)
+        """Create Balkan MAC test page with fixed footer for progress/controls."""
+        # Content page (scrollable)
+        content = QWidget()
+        layout = QVBoxLayout(content)
         layout.addWidget(
             tool_description(
                 "Za svaki portal/MAC učitava Live grupe, pronalazi Balkan programe, "
@@ -4324,11 +5595,7 @@ class AuroraWindow(QMainWindow):
         remove_selected.clicked.connect(self.remove_selected_stalker_balkan_rows)
         export_results = button("Export rezultata")
         export_results.clicked.connect(self.export_stalker_balkan_results)
-        stop_check = button("Zaustavi test")
-        stop_check.clicked.connect(self.stop_stalker_balkan_check)
-        run_check = button("Provjeri Balkan MAC", primary=True)
-        run_check.clicked.connect(self.toggle_stalker_balkan_check)
-
+        # Stop/Run buttons moved to footer
         controls.addWidget(load_valid)
         controls.addWidget(load_profiles)
         controls.addWidget(paste_profiles)
@@ -4336,8 +5603,6 @@ class AuroraWindow(QMainWindow):
         controls.addWidget(clear_rows)
         controls.addWidget(remove_selected)
         controls.addWidget(export_results)
-        controls.addWidget(stop_check)
-        controls.addWidget(run_check)
         layout.addLayout(controls)
 
         options = QHBoxLayout()
@@ -4362,8 +5627,6 @@ class AuroraWindow(QMainWindow):
         self.stalker_balkan_input.setMaximumHeight(110)
         layout.addWidget(self.stalker_balkan_input)
 
-        self.stalker_balkan_progress = QProgressBar()
-        layout.addWidget(self.stalker_balkan_progress)
         self.stalker_balkan_table = table(
             [
                 "Portal URL",
@@ -4373,6 +5636,7 @@ class AuroraWindow(QMainWindow):
                 "Testirano",
                 "Status",
                 "Uzorci",
+                "Ističe",
                 "Vrijeme",
             ]
         )
@@ -4394,7 +5658,34 @@ class AuroraWindow(QMainWindow):
             self.stalker_balkan_table_menu
         )
         layout.addWidget(self.stalker_balkan_table, 1)
-        return page
+
+        # Footer widget (fixed at bottom)
+        footer = QWidget()
+        footer_layout = QVBoxLayout(footer)
+        footer_layout.setContentsMargins(8, 8, 8, 8)
+        footer_layout.setSpacing(6)
+
+        # Progress bar
+        self.stalker_balkan_progress = QProgressBar()
+        self.stalker_balkan_progress.setValue(0)
+        self.stalker_balkan_progress.setMinimumHeight(22)
+        footer_layout.addWidget(self.stalker_balkan_progress)
+
+        # Stop/Run button row
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        stop_check = button("Zaustavi test")
+        stop_check.clicked.connect(self.stop_stalker_balkan_check)
+        stop_check.setMinimumHeight(36)
+        run_check = button("Provjeri Balkan MAC", primary=True)
+        run_check.clicked.connect(self.toggle_stalker_balkan_check)
+        run_check.setMinimumHeight(36)
+        btn_row.addStretch(1)
+        btn_row.addWidget(stop_check)
+        btn_row.addWidget(run_check)
+        footer_layout.addLayout(btn_row)
+
+        return self._create_page_with_footer(content, footer)
 
     def _vault_tab(self) -> QWidget:
         page = QWidget()
@@ -4893,6 +6184,8 @@ class AuroraWindow(QMainWindow):
             self.scan_worker.stop()
             self.scan_start.setText(self.translate_static_text("Pokreni provjeru"))
             return
+        if self.scan_worker is not None:
+            return
         candidates = extract_playlist_urls(
             self.scan_input.toPlainText(), playlists_only=False
         ).urls
@@ -4913,12 +6206,13 @@ class AuroraWindow(QMainWindow):
         self.scan_table.setRowCount(0)
         self.scan_progress.setMaximum(len(candidates))
         self.scan_progress.setValue(0)
-        self.scan_worker = XtreamScanWorker(
+        worker = XtreamScanWorker(
             candidates, self.scan_threads.value(), self.scan_timeout.value()
         )
+        self.scan_worker = worker
         self.scan_worker.result.connect(self.add_scan_result)
         self.scan_worker.progress.connect(lambda done, total: self.scan_progress.setValue(done))
-        self.scan_worker.finished_scan.connect(self.scan_finished)
+        self.scan_worker.finished_scan.connect(lambda w=worker: self.scan_finished(w))
         self.scan_worker.start()
         self.scan_start.setText(self.translate_static_text("Zaustavi"))
         self.connection_label.setText(
@@ -4940,15 +6234,23 @@ class AuroraWindow(QMainWindow):
                 result["password"],
                 result["expiry"],
                 result["connections"],
+                result.get("free_slots", "—"),
                 result["content"],
                 result["ping"],
             ]
             online = result["status"].lower() in {"active", "online"}
             for column, value in enumerate(values):
-                item = QTableWidgetItem(value)
+                if column == 6:
+                    try:
+                        numeric_val = int(value)
+                    except (ValueError, TypeError):
+                        numeric_val = -1
+                    item = NumericTableWidgetItem(value, numeric_val)
+                else:
+                    item = QTableWidgetItem(value)
                 if column == 0:
                     item.setForeground(QColor("#62d6a7" if online else "#ff839f"))
-                item.setData(Qt.ItemDataRole.UserRole, result)
+                    item.setData(Qt.ItemDataRole.UserRole, result)
                 self.scan_table.setItem(row, column, item)
         if online:
             self.metric_online.value.setText(str(int(self.metric_online.value.text()) + 1))
@@ -4956,10 +6258,11 @@ class AuroraWindow(QMainWindow):
                 self.vault.save(result)
                 self.refresh_vault()
 
-    def scan_finished(self) -> None:
+    def scan_finished(self, worker) -> None:
         self.scan_start.setText(self.translate_static_text("Pokreni provjeru"))
         self.connection_label.setText(self.tr_ui("ready"))
-        self.scan_worker = None
+        if self.scan_worker is worker:
+            self.scan_worker = None
         self.statusBar().showMessage("Xtream provjera je završena.", 5000)
 
     def filter_scan_results(self) -> None:
@@ -5235,6 +6538,8 @@ class AuroraWindow(QMainWindow):
             self.mac_worker.stop()
             self.mac_start.setText(self.translate_static_text("Pokreni MAC provjeru"))
             return
+        if self.mac_worker is not None:
+            return
         url = self.mac_check_url.text().strip()
         macs = parse_mac_lines(self.mac_check_input.toPlainText())
         if not urlparse(normalize_url(url)).netloc or not macs:
@@ -5242,7 +6547,7 @@ class AuroraWindow(QMainWindow):
             return
         self.mac_table.setRowCount(0)
         self.mac_progress.setMaximum(len(macs))
-        self.mac_worker = MacHttpWorker(
+        worker = MacHttpWorker(
             normalize_url(url),
             macs,
             self.mac_mode.currentText(),
@@ -5250,9 +6555,10 @@ class AuroraWindow(QMainWindow):
             self.mac_timeout.value(),
             self.mac_success.text().strip(),
         )
+        self.mac_worker = worker
         self.mac_worker.result.connect(self.add_mac_result)
         self.mac_worker.progress.connect(lambda done, total: self.mac_progress.setValue(done))
-        self.mac_worker.finished_scan.connect(self.mac_finished)
+        self.mac_worker.finished_scan.connect(lambda w=worker: self.mac_finished(w))
         self.mac_worker.start()
         self.mac_start.setText(self.translate_static_text("Zaustavi"))
 
@@ -5266,9 +6572,10 @@ class AuroraWindow(QMainWindow):
                     item.setForeground(QColor("#62d6a7" if result[key] == "DA" else "#ff839f"))
                 self.mac_table.setItem(row, column, item)
 
-    def mac_finished(self) -> None:
+    def mac_finished(self, worker) -> None:
         self.mac_start.setText(self.translate_static_text("Pokreni MAC provjeru"))
-        self.mac_worker = None
+        if self.mac_worker is worker:
+            self.mac_worker = None
 
     def export_mac_results(self) -> None:
         if not self.mac_table.rowCount():
@@ -5871,18 +7178,21 @@ class AuroraWindow(QMainWindow):
         if self.stalker_check_worker and self.stalker_check_worker.isRunning():
             self.stalker_check_worker.stop()
             return
+        if self.stalker_check_worker is not None:
+            return
         profiles = self.stalker_check_profiles()
         if not profiles:
             QMessageBox.information(self, "Provjera portala", "Nema URL/MAC profila za provjeru.")
             return
         self.stalker_check_progress.setMaximum(len(profiles))
         self.stalker_check_progress.setValue(0)
-        self.stalker_check_worker = StalkerProfileCheckWorker(profiles)
+        worker = StalkerProfileCheckWorker(profiles)
+        self.stalker_check_worker = worker
         self.stalker_check_worker.result.connect(self.add_stalker_check_result)
         self.stalker_check_worker.progress.connect(
             lambda done, total: self.stalker_check_progress.setValue(done)
         )
-        self.stalker_check_worker.finished_scan.connect(self.stalker_check_finished)
+        self.stalker_check_worker.finished_scan.connect(lambda w=worker: self.stalker_check_finished(w))
         self.stalker_check_worker.start()
 
     def stop_stalker_profile_check(self) -> None:
@@ -5898,7 +7208,7 @@ class AuroraWindow(QMainWindow):
                 self.stalker_check_table.item(row, 0).text() == result["portal"]
                 and self.stalker_check_table.item(row, 1).text() == result["mac"]
             ):
-                values = [result["works"], result["status"], result["ping"]]
+                values = [result["works"], result["status"], result.get("expiry", "—"), result["ping"]]
                 with table_sorting_paused(self.stalker_check_table):
                     for offset, value in enumerate(values, start=2):
                         item = QTableWidgetItem(value)
@@ -5907,8 +7217,9 @@ class AuroraWindow(QMainWindow):
                         self.stalker_check_table.setItem(row, offset, item)
                 return
 
-    def stalker_check_finished(self) -> None:
-        self.stalker_check_worker = None
+    def stalker_check_finished(self, worker) -> None:
+        if self.stalker_check_worker is worker:
+            self.stalker_check_worker = None
         self.statusBar().showMessage("Provjera URL/MAC profila je završena.", 5000)
 
     def remove_bad_stalker_check_rows(self) -> None:
@@ -6159,6 +7470,8 @@ class AuroraWindow(QMainWindow):
                 4000,
             )
             return
+        if self.stalker_balkan_worker is not None:
+            return
 
         pasted = self.stalker_balkan_input.toPlainText().strip()
         if pasted:
@@ -6182,16 +7495,17 @@ class AuroraWindow(QMainWindow):
 
         self.stalker_balkan_progress.setMaximum(len(profiles))
         self.stalker_balkan_progress.setValue(0)
-        self.stalker_balkan_worker = StalkerBalkanMacWorker(
+        worker = StalkerBalkanMacWorker(
             profiles,
             sample_size=self.stalker_balkan_sample_size.value(),
             timeout=self.stalker_balkan_timeout.value(),
             language=self.language,
         )
+        self.stalker_balkan_worker = worker
         self.stalker_balkan_worker.result.connect(self.add_stalker_balkan_result)
         self.stalker_balkan_worker.progress.connect(self.stalker_balkan_progress_changed)
         self.stalker_balkan_worker.log.connect(lambda message: self.statusBar().showMessage(message, 3000))
-        self.stalker_balkan_worker.finished_scan.connect(self.stalker_balkan_finished)
+        self.stalker_balkan_worker.finished_scan.connect(lambda w=worker: self.stalker_balkan_finished(w))
         self.stalker_balkan_worker.start()
         self.statusBar().showMessage(
             self.translate_static_text("Balkan MAC test je pokrenut."),
@@ -6228,6 +7542,7 @@ class AuroraWindow(QMainWindow):
                     result["tested"],
                     result["status"],
                     result["samples"],
+                    result.get("expiry", "—"),
                     result["ping"],
                 ]
                 with table_sorting_paused(self.stalker_balkan_table):
@@ -6240,8 +7555,9 @@ class AuroraWindow(QMainWindow):
                         self.stalker_balkan_table.setItem(row, offset, item)
                 return
 
-    def stalker_balkan_finished(self) -> None:
-        self.stalker_balkan_worker = None
+    def stalker_balkan_finished(self, worker) -> None:
+        if self.stalker_balkan_worker is worker:
+            self.stalker_balkan_worker = None
         self.statusBar().showMessage(
             self.translate_static_text("Balkan MAC test je završen."),
             5000,
@@ -6376,6 +7692,7 @@ class AuroraWindow(QMainWindow):
         menu = QMenu(self)
         generator = menu.addAction("Povuci u Generator")
         scan = menu.addAction("Pošalji u provjeru")
+        balkan = menu.addAction("Pošalji u Balkan provjeru")
         copy_login = menu.addAction("Kopiraj server / korisnik / lozinka")
         menu.addSeparator()
         delete = menu.addAction("Obriši označeno")
@@ -6385,6 +7702,8 @@ class AuroraWindow(QMainWindow):
             self.load_vault_account_to_generator()
         elif chosen == scan:
             self.send_vault_account_to_scan()
+        elif chosen == balkan:
+            self.send_vault_account_to_balkan()
         elif chosen == copy_login:
             QApplication.clipboard().setText(
                 "\n".join(
@@ -6394,6 +7713,17 @@ class AuroraWindow(QMainWindow):
             )
         elif chosen == delete:
             self.delete_vault_row()
+
+    def send_vault_account_to_balkan(self) -> None:
+        account = self.selected_vault_account()
+        if not account:
+            return
+        playlist_url = (
+            f"{account['server'].rstrip('/')}/get.php?"
+            f"username={account['username']}&password={account['password']}&type=m3u_plus"
+        )
+        self.load_urls_into_balkan([playlist_url])
+        self.statusBar().showMessage("Račun je poslan u Balkan IPTV.", 5000)
 
     def load_vault_account_to_generator(self) -> None:
         account = self.selected_vault_account()
@@ -6512,10 +7842,14 @@ class AuroraWindow(QMainWindow):
             return
         table_widget.setCurrentCell(row, 0)
         self._active_saved_lists_table = table_widget
+        record = self.selected_saved_list()
+        is_stalker = record and ("MAC" in str(record.get("kind", "")) or "Stalker" in str(record.get("kind", "")))
         menu = QMenu(self)
         open_list = menu.addAction("Otvori listu")
         open_generator = menu.addAction("Vrati u Generator")
         send_scan = menu.addAction("Pošalji u provjeru")
+        if is_stalker:
+            send_balkan = menu.addAction("Pošalji u Balkan provjeru (Stalker)")
         copy_list = menu.addAction("Kopiraj listu")
         export_list = menu.addAction("Export liste")
         menu.addSeparator()
@@ -6528,12 +7862,56 @@ class AuroraWindow(QMainWindow):
             self.open_saved_list_in_generator()
         elif chosen == send_scan:
             self.send_saved_list_to_scan()
+        elif chosen == send_balkan and is_stalker:
+            self.send_saved_stalker_list_to_balkan()
         elif chosen == copy_list:
             self.copy_saved_list()
         elif chosen == export_list:
             self.export_saved_list()
         elif chosen == delete_list:
             self.delete_saved_list_row()
+
+    def send_saved_stalker_list_to_balkan(self) -> None:
+        record = self.selected_saved_list()
+        if not record:
+            return
+        content = str(record["content"])
+        profiles = self._parse_stalker_content_for_profiles(content)
+        if not profiles:
+            QMessageBox.information(
+                self,
+                "Balkan MAC test",
+                "U listi nema pronađenih portal/MAC parova za Balkan test.",
+            )
+            return
+        self.stalker_balkan_input.setPlainText("\n".join(f"{p[0]}\n{p[1]}" for p in profiles))
+        self.toggle_stalker_balkan_check()
+        self.statusBar().showMessage(f"Poslano {len(profiles)} portal/MAC parova u Balkan MAC test.", 5000)
+
+    def _parse_stalker_content_for_profiles(self, content: str) -> list[tuple[str, str]]:
+        profiles = []
+        lines = content.splitlines()
+        current_portal = None
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            if line.lower().startswith(("http://", "https://")):
+                if "/c" in line or "/stalker_portal" in line or "load.php" in line:
+                    current_portal = line.rstrip("/")
+                    if current_portal.endswith("/c"):
+                        current_portal = current_portal[:-2]
+            elif current_portal and re.match(r"([0-9a-fA-F]{2}[:-]){5}[0-9a-fA-F]{2}", line):
+                mac = normalize_mac(line)
+                profiles.append((current_portal, mac))
+        seen = set()
+        unique = []
+        for p in profiles:
+            key = (p[0], p[1])
+            if key not in seen:
+                seen.add(key)
+                unique.append(p)
+        return unique
 
     def open_saved_list(self) -> None:
         record = self.selected_saved_list()
@@ -6893,69 +8271,120 @@ class AuroraWindow(QMainWindow):
             self.select_main_tab(str(self.settings.value("last_main_tab", self.tr_ui("home"))))
 
     def closeEvent(self, event) -> None:
-        for worker in [
-            self.scan_worker,
-            self.mac_worker,
-            self.stalker_check_worker,
-            self.stalker_balkan_worker,
-            self.playlist_worker,
-            self.update_check_worker,
-            self.update_download_worker,
-        ]:
-            if worker and worker.isRunning():
-                if hasattr(worker, "stop"):
-                    worker.stop()
-                else:
-                    worker.requestInterruption()
-                    worker.quit()
-                worker.wait(1500)
-        self.settings.setValue("geometry", self.saveGeometry())
-        self.settings.setValue("scan_threads", self.scan_threads.value())
-        self.settings.setValue("scan_timeout", self.scan_timeout.value())
-        if self.remember_last_tab:
-            self.settings.setValue("last_main_tab", self.tabs.tabText(self.tabs.currentIndex()))
-        if self.fusion_window:
-            try:
-                self.fusion_window.save_settings()
-                if hasattr(self.fusion_window, "stop_background_work"):
-                    self.fusion_window.stop_background_work()
-                for worker_name in ("worker", "vault_worker", "super_thread", "proxy_thread"):
-                    worker = getattr(self.fusion_window, worker_name, None)
-                    if worker and hasattr(worker, "isRunning") and worker.isRunning():
-                        if hasattr(worker, "is_running"):
-                            worker.is_running = False
-                        worker.quit()
-                        worker.wait(1000)
-                for thread in list(getattr(self.fusion_window, "stream_threads", [])):
-                    if thread and hasattr(thread, "isRunning") and thread.isRunning():
-                        if hasattr(thread, "is_running"):
-                            thread.is_running = False
-                        thread.quit()
-                        thread.wait(800)
-                        if thread.isRunning() and hasattr(thread, "terminate"):
-                            thread.terminate()
-                            thread.wait(300)
-                self.fusion_window.stream_threads = []
-                stalker_window = getattr(self.fusion_window, "stalker_window", None)
-                if stalker_window:
-                    worker = getattr(stalker_window, "worker", None)
-                    if worker and hasattr(worker, "isRunning") and worker.isRunning():
-                        if hasattr(worker, "is_running"):
-                            worker.is_running = False
-                        worker.quit()
-                        worker.wait(800)
-                    stalker_window.close()
-            except Exception:
-                pass
-        if self.stalker_embedded_window:
-            try:
-                self.stalker_embedded_window._save_settings()
-                client = getattr(self.stalker_embedded_window, "client", None)
-                if client:
-                    client.close()
-            except Exception:
-                pass
-        event.accept()
+        import time as _time
+
+        if not hasattr(self, "_shutdown_initiated"):
+            self._shutdown_initiated = False
+        if not hasattr(self, "_shutdown_deadline"):
+            self._shutdown_deadline = 0.0
+        if not hasattr(self, "_shutdown_retry_scheduled"):
+            self._shutdown_retry_scheduled = False
+
+        def _any_workers_running() -> bool:
+            workers = [
+                self.scan_worker,
+                self.mac_worker,
+                self.stalker_check_worker,
+                self.stalker_balkan_worker,
+                self.playlist_worker,
+                self.update_check_worker,
+                self.update_download_worker,
+            ]
+            return any(w and w.isRunning() for w in workers)
+
+        def _finalize_close() -> None:
+            self.settings.setValue("geometry", self.saveGeometry())
+            self.settings.setValue("scan_threads", self.scan_threads.value())
+            self.settings.setValue("scan_timeout", self.scan_timeout.value())
+            if self.remember_last_tab:
+                self.settings.setValue("last_main_tab", self.tabs.tabText(self.tabs.currentIndex()))
+            if self.fusion_window:
+                try:
+                    self.fusion_window.save_settings()
+                    if hasattr(self.fusion_window, "stop_background_work"):
+                        self.fusion_window.stop_background_work()
+                    for worker_name in ("worker", "vault_worker", "super_thread", "proxy_thread"):
+                        worker = getattr(self.fusion_window, worker_name, None)
+                        if worker and hasattr(worker, "isRunning") and worker.isRunning():
+                            if hasattr(worker, "is_running"):
+                                worker.is_running = False
+                            worker.requestInterruption()
+                            if hasattr(worker, "quit"):
+                                worker.quit()
+                    for thread in list(getattr(self.fusion_window, "stream_threads", [])):
+                        if thread and hasattr(thread, "isRunning") and thread.isRunning():
+                            if hasattr(thread, "is_running"):
+                                thread.is_running = False
+                            thread.requestInterruption()
+                            if hasattr(thread, "quit"):
+                                thread.quit()
+                    self.fusion_window.stream_threads = []
+                    stalker_window = getattr(self.fusion_window, "stalker_window", None)
+                    if stalker_window:
+                        worker = getattr(stalker_window, "worker", None)
+                        if worker and hasattr(worker, "isRunning") and worker.isRunning():
+                            if hasattr(worker, "is_running"):
+                                worker.is_running = False
+                            worker.requestInterruption()
+                            if hasattr(worker, "quit"):
+                                worker.quit()
+                        stalker_window.close()
+                except Exception:
+                    pass
+            if self.stalker_embedded_window:
+                try:
+                    self.stalker_embedded_window._save_settings()
+                    client = getattr(self.stalker_embedded_window, "client", None)
+                    if client:
+                        client.close()
+                except Exception:
+                    pass
+            event.accept()
+
+        if not self._shutdown_initiated:
+            self._shutdown_initiated = True
+            self._shutdown_deadline = _time.monotonic() + 5.0
+
+            for w in [
+                self.scan_worker,
+                self.mac_worker,
+                self.stalker_check_worker,
+                self.stalker_balkan_worker,
+                self.playlist_worker,
+                self.update_check_worker,
+                self.update_download_worker,
+            ]:
+                if w and w.isRunning():
+                    if hasattr(w, "stop"):
+                        w.stop()
+                    w.requestInterruption()
+                    if hasattr(w, "quit"):
+                        w.quit()
+
+            remaining = self._shutdown_deadline - _time.monotonic()
+            if remaining > 0:
+                for w in [
+                    self.scan_worker,
+                    self.mac_worker,
+                    self.stalker_check_worker,
+                    self.stalker_balkan_worker,
+                    self.playlist_worker,
+                    self.update_check_worker,
+                    self.update_download_worker,
+                ]:
+                    if w and w.isRunning():
+                        w.wait(int(remaining * 1000))
+
+        if _any_workers_running():
+            if not self._shutdown_retry_scheduled:
+                self._shutdown_retry_scheduled = True
+                QTimer.singleShot(200, lambda: (setattr(self, "_shutdown_retry_scheduled", False), self.close()))
+            event.ignore()
+            return
+
+        self._shutdown_initiated = False
+        self._shutdown_retry_scheduled = False
+        _finalize_close()
 
 
 def main() -> int:
